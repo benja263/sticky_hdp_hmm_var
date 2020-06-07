@@ -1,9 +1,12 @@
 """
 
 """
-import numpy as np
 from collections import defaultdict
+
+import numpy as np
 from scipy.stats import invwishart, matrix_normal
+
+from hdp_var.utils.HMM import compute_likelihoods, backwards_messaging
 
 
 class HDPVar:
@@ -35,13 +38,13 @@ class HDPVar:
         """
         Parameter explanation:
         N - number of transitions - last row assigns 1 to z[0]
-        barM - number of tables that "considered" ordering dish k in restaurant j 
+        bar_m - number of tables that "considered" ordering dish k in restaurant j 
         m - number of tables that were "served" dish k in restaurant j
         w - override variable for table t in restaurant j
         Ns - count of each state in the state sequence z
         """
-        self.state_counts = {'N': np.zeros((L + 1, L)), 'barM': np.zeros((L, L)), 'm': np.zeros((L, L)),
-                             'w': np.zeros((L, 1)), 'Ns': np.zeros((L, 1))}
+        self.state_counts = {'N': np.zeros((L + 1, L)), 'bar_m': np.zeros((L, L)), 'm': np.zeros((L, L)),
+                             'w': np.zeros(L), 'Ns': np.zeros(L)}
         # maximum number of states
         self.L = L
         # VAR order
@@ -60,7 +63,8 @@ class HDPVar:
         # current training iteration
         self.iteration = 0
         # likelihoods of each state at each time point
-        self.likelihoods = []
+        self.likelihoods = None
+        self.total_log_likelihoods = []
 
         self.sample_concentration_parameters()
 
@@ -98,6 +102,44 @@ class HDPVar:
         self.concentration_parameters['rho'] = self.sampling_parameters['c'] / \
                                                (self.sampling_parameters['c'] + self.sampling_parameters['d'])
 
+
+    def train(self, data, seed=None):
+        """
+
+        :param data:
+        :param seed:
+        :return:
+        """
+        iterations = np.arange(self.training_parameters['iterations'])
+        if self.iteration != 0:
+            iterations = np.arange(self.iteration + 1, self.training_parameters['iterations'])
+        for iteration in iterations:
+            z, total_log_likelihood = self.sample_state_sequence(data=data, seed=seed)
+            self.sample_tables(seed=seed)
+            self.sample_distributions(seed=seed)
+            self.sample_theta(data_statistics=self.calculate_statistics(data))
+            self.sample_hyperparameters(seed=seed)
+
+            self.total_log_likelihoods.append(total_log_likelihood)
+
+            if self.training_parameters['save_every'] % iteration == 0 and iteration != self.training_parameters['iterations']:
+                self.param_tracking['state_sequence'].append(z)
+                self.param_tracking['A'].append(self.theta['A'])
+                self.param_tracking['Sigma'].append(self.theta['sigma'])
+                self.param_tracking['iteration'].append(iteration)
+                self.param_tracking['gamma'].append(self.concentration_parameters['gamma'])
+                self.param_tracking['alpha_p_kappa'].append(self.concentration_parameters['alpha_p_kappa'])
+                self.param_tracking['rho'].append(self.concentration_parameters['rho'])
+                self.param_tracking['transition_probabilities'].append(self.distributions['transition_probabilities'])
+                self.param_tracking['initial_probabilities'].append(self.distributions['initial_probabilities'])
+                self.param_tracking['beta'].append(self.distributions['beta'])
+            if self.training_parameters['print_every'] % iteration == 0:
+                print(f"Iteration: {iteration}/{self.training_parameters['iterations']}")
+            self.iteration = iteration
+
+        print(f'Training has stopped at iteration: {self.iteration}')
+
+
     def sample_distributions(self, seed=None):
         """
 
@@ -111,7 +153,7 @@ class HDPVar:
         rng = np.random.default_rng(seed=seed)
         # vector beta
         beta = rng.dirichlet(
-            np.sum(self.state_counts['barM'] + self.concentration_parameters['gamma'] / self.L, axis=0))
+            np.sum(self.state_counts['bar_m'] + self.concentration_parameters['gamma'] / self.L, axis=0))
         # transition probabilities
         pi_k = np.zeros((self.L, self.L))
         for k in range(self.L):
@@ -131,127 +173,72 @@ class HDPVar:
         :param seed:
         :return:
         """
-        np.random.seed(seed)
-        total_log_likelihood = self.compute_likelihoods(data)
+        self.likelihoods, total_log_likelihood = compute_likelihoods(self.L, data, self.theta,
+                                                                     self.distributions['initial_probabilities'],
+                                                                     self.distributions['transition_probabilities'])
         # number of observations
-        T = np.shape(data['observations'])[1]
+        T = np.shape(data['Y'])[1]
         block_size = data['block_size']
         block_end = data['block_end']
 
-        _, part_marg_likelihood = self.backwards_messaging()
-        z = np.zeros(T)
+        part_marg_likelihood = backwards_messaging(size=(self.L, T),
+                                                   pi_z=self.distributions['transition_probabilities'],
+                                                   likelihoods=self.likelihoods)
+        z = np.zeros(T, dtype=int)
         # forward run
         # pre-allocate indices
-        INDS = {'obsIndsz': [{'inds': np.zeros(T), 'tot': 0} for i in range(self.L)]}
-        totSeq = np.zeros(self.L)
-        indSeq = np.zeros(T, self.L)
-        Ns = np.zeros(self.state_counts['Ns'].shape)
+        assignment_info = [{'indices': np.zeros(T, dtype=int), 'total_count': 0} for k in range(self.L)]
+        # tot_seq = np.zeros(self.L, dtype=int)
+        # index_seq = np.zeros((T, self.L), dtype=int)
+        Ns = np.zeros(self.state_counts['Ns'].shape, dtype=int)
         # transition probabilities
-        N = np.zeros(self.state_counts['N'].shape)
+        N = np.zeros(self.state_counts['N'].shape, dtype=int)
 
         # initialize
-        p_z = self.distributions['initial_probabilities'] * part_marg_likelihood[:, 1]
-        obsInd = np.arange(block_end[0])
-        p_z = np.cumsum(p_z)
-        z[0] = 1 + np.sum(p_z[-1] * np.random.rand(1) > p_z)
-
+        p_z = np.multiply(self.distributions['initial_probabilities'], part_marg_likelihood[:, 0])
+        obs_inds = np.arange(block_end[0])
+        # sampling from cdf
+        z[0] = self.sample_state(p_z)
+        # update state count
         N[-1, z[0]] = 1
-
         # count for block size
         for k in range(block_size[0]):
             Ns[z[0]] += 1
-            totSeq[z[0]] += 1
-            indSeq[totSeq[z[0]], z[0]] = obsInd[k]
+            # tot_seq[z[0]] += 1
+            # index_seq[tot_seq[z[0]], z[0]] = obs_inds[k]
 
         for t in range(1, T):
-            p_z = self.distributions['transition_probabilities'][z[t - 1]] * part_marg_likelihood[:, 1]
-            obsInd = np.arange(block_end[0])
-            p_z = np.cumsum(p_z)
-            # todo consider removing 1 as it may be related to index starting at 1 in matlab but i am not sure
-            z[t] = 1 + np.sum(p_z[-1] * np.random.rand(1) > p_z)
+            p_z = self.distributions['transition_probabilities'][z[t - 1]].dot(part_marg_likelihood[:, 1])
+            # obs_inds = np.arange(block_end[t-1], block_end[t]+1)
+            # sampling from cdf
+            z[t] = self.sample_state(p_z)
+            # update counts
             N[z[t - 1], z[t]] += 1
 
             # count for block size
             for k in range(block_size[t]):
                 Ns[z[t]] += 1
-                totSeq[z[t]] += 1
-                indSeq[totSeq[z[t]], z[t]] = obsInd[k]
+                # tot_seq[z[t]] += 1
+                # index_seq[tot_seq[z[t]], z[t]] = obs_inds[k]
 
-        for k in range(self.L):
-            INDS['obsIndsz'][k]['tot'] = totSeq[k]
-            INDS['obsIndsz'][k]['inds'] = indSeq[:, k]
+        # for k in range(self.L):
+        #     # assignment_info[k]['total_count'] = tot_seq[k]
+        #     assignment_info[k]['total_count'] =
+        #     # assignment_info[k]['indices'] = index_seq[:, k]
 
         self.state_counts['Ns'] = Ns
         self.state_counts['N'] = N
-        return z, INDS, total_log_likelihood
+        return z, total_log_likelihood
 
-    def compute_likelihoods(self, data):
+    def sample_state(self, pi_z_t):
         """
-
-        :param data:
+        Sample state i for time t (z[t] = i) using the inverse cdf method
+        Update state counts in counts
+        :param list(float) pi_z_t: state probabilities at time t = p(z[t]=i)
         :return:
         """
-        D, T = np.shape(data['observations'])
-        log_likelihood = np.zeros(self.L, T)
-        Y = data['observations']
-        X = data['X']
-
-        for k in range(self.L):
-            chol_inv_sigma = np.linalg.cholesky(self.theta['Sigma'][:, :, k])
-            dchol_inv_sigma = np.diag(chol_inv_sigma)
-            mu = chol_inv_sigma * (Y - self.theta['A'][:, :, k] * X)
-            log_likelihood[k] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(dchol_inv_sigma))
-        # todo how to do this
-        normalizer = np.max(log_likelihood, axis=1)
-        log_likelihood -= normalizer
-
-        self.likelihoods = np.exp(log_likelihood)
-        normalizer -= (D / 2) * np.log(2 * np.pi)
-
-        # forward pass to integrate over the state sequence
-        fwd_msg = np.zeros((self.L, T))
-        fwd_msg[:, 1] = np.multiply(self.likelihoods[:, 1], self.distributions['initial_probabilities'])
-        # normalize
-        # todo look at the correct summing axis
-        sum_fwd_msg = np.sum(fwd_msg, axis=0)
-        fwd_msg[:, 1] /= sum_fwd_msg
-
-        # add the constant for normalizing the forward message
-        # murphy's book page 611 Z is the constant
-        normalizer[0] += np.log(sum_fwd_msg)
-        # compute messages forward in time
-        for t in range(T - 1):
-            # integrate out z[t]
-            partial_marg_likelihood = self.distributions['transition_probabilities'] * fwd_msg[:, t]
-            # multiply likelihood by incoming message
-            fwd_msg[:, t + 1] = np.multiply(partial_marg_likelihood, self.likelihoods[:, t + 1])
-            sum_fwd_msg = np.sum(fwd_msg[:, t + 1])
-            fwd_msg[:, t + 1] /= sum_fwd_msg
-            normalizer[t + 1] += np.log(sum_fwd_msg)
-        # total log-likelihood
-        return np.sum(normalizer)
-
-    def backwards_messaging(self, T):
-        """
-
-        :param T:
-        :return:
-        """
-        back_msg = np.zeros((self.L, T))
-        back_msg[:, -1] = np.ones(self.L)
-        partial_marg_likelihood = np.zeros(back_msg.shape)
-        for t in range(start=T - 1, stop=0, step=-1):
-            # multiply likelihood by incoming message
-            partial_marg_likelihood[:, t + 1] = np.multiply(self.likelihoods[:, t + 1], back_msg[:, t + 1])
-            # integrate over z(t)
-            back_msg[:, t] = np.multiply(self.distributions['transition_probabilities'],
-                                         partial_marg_likelihood[:, t + 1])
-            # normalize
-            back_msg[:, t] /= np.sum(back_msg[:, t])
-        # for t=0
-        # todo check if needed
-        partial_marg_likelihood[:, 0] = np.multiply(self.likelihoods[:, 0], back_msg[:, 0])
-        return back_msg, partial_marg_likelihood
+        cdf = np.cumsum(pi_z_t)
+        return np.sum(cdf[-1] * np.random.rand(1) > cdf)
 
     def sample_tables(self, seed=None):
         """
@@ -275,43 +262,42 @@ class HDPVar:
             m[ind] = np.divide(temp, element + np.arange(1, N[ind] + 1))
         m[self.state_counts['N'] == 0.0] = 0.0
         self.state_counts['m'] = m
-        self.sample_barM()
+        self.sample_bar_m()
 
-    def sample_barM(self):
+    def sample_bar_m(self):
         """
 
         :return:
         """
-        barM = self.state_counts['m'].copy()
+        bar_m = self.state_counts['m'].copy()
         rho = self.sampling_parameters['rho']
         p = 0.0
         w = np.zeros(self.state_counts['w'].shape)
-        for i in range(barM.shape[1]):
+        for i in range(bar_m.shape[1]):
             if rho > 0.0:
                 p = rho / (self.distributions['beta'][i] * (1 - rho) + rho)
             w[i] = np.random.binomial(p, self.state_counts['m'][i, i])
-            barM[i, i] -= w
-        self.state_counts['barM'] = barM
+            bar_m[i, i] -= w
+        self.state_counts['bar_m'] = bar_m
         self.state_counts['w'] = w
 
-    def calculate_statistics(self, data, INDS):
+    def calculate_statistics(self, data):
         """
 
-        :param INDS:
+        :param data:
         :return:
         """
-        dim_obs, dim_x = data['observations'].shape[0], data['X'].shape[0]
-        S_xx, S_yy = np.zeros((dim_x, dim_x, self.L)), np.zeros((dim_obs, dim_obs, self.L))
-        S_yx = np.zeros((dim_obs, dim_x, self.L))
+        dim_y, dim_x = data['Y'].shape[0], data['X'].shape[0]
+        S_xx, S_yy = np.zeros((dim_x, dim_x, self.L)), np.zeros((dim_y, dim_y, self.L))
+        S_yx = np.zeros((dim_y, dim_x, self.L))
 
-        obs, X = data['observations'], data['X']
         for k in range(self.L):
-            # todo see if this works
-            obsInd = INDS['obsIndzs'][k]['inds'][np.arange(INDS['obsIndzs'][k]['tot'])]
-            # todo check if it is element wise or dot product
-            S_xx[:, :, k] += X[:, obsInd].dot(X[:, obsInd])
-            S_yy[:, :, k] += obs[:, obsInd].dot(obs[:, obsInd])
-            S_yx[:, :, k] += obs[:, obsInd].dot(X[:, obsInd])
+            S_xx[:, :, k] += data['X'][:, self.state_sequence == k].dot(
+                data['X'][:, self.state_sequence == k].transpose())
+            S_yy[:, :, k] += data['Y'][:, self.state_sequence == k].dot(
+                data['Y'][:, self.state_sequence == k].transpose())
+            S_yx[:, :, k] += data['Y'][:, self.state_sequence == k].dot(
+                data['X'][:, self.state_sequence == k].transpose())
         return S_xx, S_yy, S_yx
 
     def sample_init_theta(self, seed=None):
@@ -320,40 +306,36 @@ class HDPVar:
         :param seed:
         :return:
         """
-        rng = np.random.default_rng(seed=seed)
         for k in range(self.L):
             Sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
-                               scale=self.sampling_parameters['S_0'], random_state=rng)
+                               scale=self.sampling_parameters['S_0'], seed=seed).rvs()
             K_inv = np.linalg.cholesky(np.linalg.inv(self.sampling_parameters['K']))
-            A = matrix_normal(mean=self.sampling_parameters['M'], rowcov=Sigma, colcov=K_inv, random_state=rng)
+            A = matrix_normal(mean=self.sampling_parameters['M'], rowcov=Sigma, colcov=K_inv, seed=seed).rvs()
             self.theta['A'][:, :, k] = A
             self.theta['Sigma'][:, :, k] = Sigma
 
-    def sample_theta(self, INDS, seed=None):
+    def sample_theta(self, data_statistics):
         """
 
-        :param INDS:
-        :param seed:
+        :param data_statistics: output of self.compute_statistics()
         :return:
         """
-        rng = np.random.default_rng(seed=seed)
-        S_xx, S_yy, S_yx = self.calculate_statistics(INDS)
+        S_xx, S_yy, S_yx = data_statistics
         for k in range(self.L):
             s_xx = S_xx[:, :, k] + self.sampling_parameters['K']
             s_yx = S_yx[:, :, k] + self.sampling_parameters['M'].dot(self.sampling_parameters['K'])
             s_yy = S_yy[:, :, k] + self.sampling_parameters['M'].dot(
-                       self.sampling_parameters['K'].dot(np.transpose(self.sampling_parameters['M'])))
+                self.sampling_parameters['K'].dot(np.transpose(self.sampling_parameters['M'])))
             s_yx_s_xx_inv = s_yx.dot(np.linalg.inv(s_xx))
             s_ygx = s_yy - s_yx_s_xx_inv.dot(np.transpose(s_yx))
             # enforce symmetry
-            s_ygx = (s_ygx + np.transpose(s_ygx)) / 2
+            s_ygx = (s_ygx + s_ygx.tranpose()) / 2
             Sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
-                               scale=self.sampling_parameters['S_0'] + s_ygx, random_state=rng)
+                               scale=self.sampling_parameters['S_0'] + s_ygx).rvs()
             K_inv = np.linalg.cholesky(np.linalg.inv(self.sampling_parameters['K']))
-            A = matrix_normal(mean=s_yx_s_xx_inv, rowcov=Sigma, colcov=K_inv, random_state=rng)
+            A = matrix_normal(mean=s_yx_s_xx_inv, rowcov=Sigma, colcov=K_inv).rvs()
             self.theta['A'][:, :, k] = A
             self.theta['Sigma'][:, :, k] = Sigma
-
 
     def sample_hyperparameters(self, seed=None):
         """
@@ -361,69 +343,72 @@ class HDPVar:
         :param seed:
         :return:
         """
-        np.random.seed(seed)
+        rng = np.random.default_rng(seed)
         n_dot = np.sum(self.state_counts['N'], axis=1)
         m_dot = np.sum(self.state_counts['m'], axis=1)
+        bar_k = np.sum(np.sum(self.state_counts['bar_m'], axis=0) > 0)
+        valid_indices = np.where(n_dot > 0)
+        self.concentration_parameters['rho'] = rng.beta(self.sampling_parameters['c'] + np.sum(self.state_counts['w']),
+                                                        self.sampling_parameters['d'] + np.sum(self.state_counts['m']) -
+                                                        np.sum(self.state_counts['w']))
+        if valid_indices:
+            self.concentration_parameters['alpha_p_kappa'] = rng.gamma(self.sampling_parameters['a_alpha'] /
+                                                                       self.sampling_parameters['b_alpha'])
+            self.concentration_parameters['gamma'] = rng.gamma(self.sampling_parameters['a_gamma'] /
+                                                               self.sampling_parameters['b_gamma'])
+            return
+        self.concentration_parameters['alpha_p_kappa'] = self.resample_conc_parameter(
+            conc_param=self.concentration_parameters['alpha_p_kappa'],
+            table_customer_count=n_dot[valid_indices],
+            table_count=m_dot[valid_indices],
+            a=self.sampling_parameters['a_alpha'],
+            b=self.sampling_parameters['b_alpha'],
+            iterations=50, seed=seed)
+        self.concentration_parameters['gamma'] = self.resample_conc_parameter(conc_param=self.concentration_parameters['gamma'],
+                                                                              table_customer_count=np.sum(
+                                                                         self.state_counts['bar_m']),
+                                                                              table_count=bar_k,
+                                                                              a=self.sampling_parameters['a_gamma'],
+                                                                              b=self.sampling_parameters['b_gamma'],
+                                                                              iterations=50, seed=seed)
 
-    def gibs_conparam(self):
+    def resample_conc_parameter(self, conc_param, table_customer_count, table_count, a, b, iterations, seed=None):
+        """
+
+        :param conc_param:
+        :param table_customer_count:
+        :param table_count:
+        :param a:
+        :param b:
+        :param iterations:
+        :param seed:
+        :return:
+        """
         # auxiliary variable resampling of DP concentration parameter
-        pass
+        rng = np.random.default_rng(seed)
+        restaurant_count = len(table_customer_count)
+        # table count in all restaurants together
+        total_table_count = np.sum(table_count)
 
-    def generate_data_structure(self, observations):
-        """
+        A = np.array(list(zip(conc_param + 1, table_customer_count))).transpose()
 
-        :param observations:
-        :return:
-        """
-        X, valid = self.make_design_matrix(observations, self.order)
-        data = {'observations': observations[:, valid], 'X': X[:, valid]}
-        data['blockSize'] = np.ones((1, data['observations'].shape[1])),
-        data['blockEnd'] = np.cumsum(data['blockSize'])
-        return data
-
-    def viterbi(self, data):
-        """
-
-        :return:
-        """
-        log_likelihood = self.compute_likelihoods(data)
-        T = log_likelihood.shape[1]
-        delta, psi = np.zeros(log_likelihood.shape), np.zeros(log_likelihood.shape)
-        path = np.zeros(T)
-        scale = np.ones(T)
-
-        delta[:, 0] = np.multiply(self.distributions['initial_probabilities'], self.likelihoods[:, 0])
-        scale[0] = np.sum(delta[:, 0])
-        delta[:, 0] /= scale[0]
-
-        for t in range(start=1, stop=T):
-            for j in range(self.L):
-                # todo invented partial marg name - need to see what it means
-                partial_marg = np.multiply(delta[:, t - 1], self.distributions['transition_probabilities'][:, j])
-                delta[j, t], psi[j, t] = np.max(partial_marg) * self.likelihoods[j, t], np.argmax(partial_marg)
-            scale[t] = np.sum(delta[:, t])
-            delta[:, t] /= scale[t]
-
-        path[T] = np.argmax(delta[:, T])
-        for t in range(start=T - 1, stop=0, step=-1):
-            path[t] = psi[path[t + 1], t + 1]
-        self.state_sequence = path
-
-    def update_state_counts(self):
-        """
-
-        :return:
-        """
-
-    def make_design_matrix(self, obs, order):
-        pass
+        for i in range(iterations):
+            # beta auxilary variables
+            beta_aux = rng.dirichlet(A)[0]
+            # binomial auxilary variables
+            binom_aux = np.multiply(np.random.rand(restaurant_count), conc_param + table_customer_count) < table_customer_count
+            # gamma resampling of concentration parameter
+            gamma_a = a + total_table_count - np.sum(binom_aux)
+            gamma_b = b - np.sum(np.log(beta_aux))
+            conc_param = rng.gamma(gamma_a) / gamma_b
+        return conc_param
 
     def find_best_iteration(self):
         """
 
         :return:
         """
-        argmax = np.argmax(self.total_log_likelihood)
+        argmax = np.argmax(self.total_log_likelihoods)
         self.sampling_parameters['gamma'] = self.param_tracking['gamma'][argmax]
         self.sampling_parameters['alpha_p_kappa'] = self.param_tracking['alpha_p_kappa'][argmax]
         self.sampling_parameters['rho'] = self.param_tracking['rho'][argmax]

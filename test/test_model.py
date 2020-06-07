@@ -37,7 +37,8 @@ class TestModel(unittest.TestCase):
         self.assertEqual(model.training_parameters['print_every'], 100, msg='print_every != default value')
         self.assertEqual(model.training_parameters['burn_in'], 100, msg='burn_in != default value')
         self.assertEqual(model.concentration_parameters['gamma'], 1 / 0.001, msg='gamma != default value')
-        self.assertEqual(model.concentration_parameters['alpha_p_kappa'], 1 / 0.001, msg='alpha_p_kappa != default value')
+        self.assertEqual(model.concentration_parameters['alpha_p_kappa'], 1 / 0.001,
+                         msg='alpha_p_kappa != default value')
         self.assertEqual(model.concentration_parameters['rho'], 100 / 101, msg='rho != default value')
 
         try:
@@ -124,23 +125,48 @@ class TestModel(unittest.TestCase):
         model.sample_distributions(seed=42)
         try:
             np.testing.assert_array_almost_equal(model.distributions['transition_probabilities'],
-                                          np.array([[0.99474837, 0.00525163], [0.0044258,  0.9955742]]))
+                                                 np.array([[0.99474837, 0.00525163], [0.0044258, 0.9955742]]))
         except AssertionError:
             self.assertFalse(True, msg='transition_probabilities != default value')
         try:
             np.testing.assert_array_almost_equal(model.distributions['initial_probabilities'],
-                                          np.array([0.45174329, 0.54825671]))
+                                                 np.array([0.45174329, 0.54825671]))
         except AssertionError:
             self.assertFalse(True, msg='initial_probabilities != default value')
         try:
             np.testing.assert_array_almost_equal(model.distributions['beta'],
-                                          np.array([0.49649512, 0.50350488]))
+                                                 np.array([0.49649512, 0.50350488]))
         except AssertionError:
             self.assertFalse(True, msg='beta != default value')
 
+    def test_theta(self):
+        """
 
+        :return:
+        """
+        model = HDPVar(order=self.order, D=self.D, L=self.L)
+        model.sample_init_theta(seed=42)
+        try:
+            np.testing.assert_array_almost_equal(model.theta['A'],
+                                                 np.array([[[0.2830998, 0.2830998],
+                                                            [0.36914692, 0.36914692],
+                                                            [-0.13345457, -0.13345457],
+                                                            [0.90006463, 0.90006463]],
+                                                           [[-0.38974281, -0.38974281],
+                                                            [0.99489065, 0.99489065],
+                                                            [-0.08040436, -0.08040436],
+                                                            [-0.17398075, -0.17398075]]]))
+        except AssertionError:
+            self.assertFalse(True, msg='A != default value')
+        try:
+            np.testing.assert_array_almost_equal(model.theta['Sigma'],
+                                                 np.array([[[0.4593895, 0.4593895],
+                                                            [-0.43445108, - 0.43445108]],
+                                                           [[-0.43445108, - 0.43445108],
+                                                            [1.51214062, 1.51214062]]]))
+        except AssertionError:
+            self.assertFalse(True, msg='Sigma != default value')
 
 
 if __name__ == '__main__':
     unittest.main()
-
