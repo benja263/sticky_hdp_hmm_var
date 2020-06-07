@@ -92,22 +92,22 @@ def backwards_messaging(size, pi_z, likelihoods):
     return partial_marg_likelihoods
 
 
-def viterbi(L, data, pi_0, pi_z):
+def viterbi(L, data, theta,pi_0, pi_z):
     """
 
     :return:
     """
-    likelihoods, _ = compute_likelihoods(data)
+    likelihoods, _ = compute_likelihoods(L, data, theta, pi_0, pi_z)
     T = likelihoods.shape[1]
-    delta, psi = np.zeros(likelihoods.shape), np.zeros(likelihoods.shape)
-    state_sequence = np.zeros(T)
+    delta, psi = np.zeros(likelihoods.shape), np.zeros(likelihoods.shape, dtype=int)
+    state_sequence = np.zeros(T, dtype=int)
     normalizer = np.ones(T)
 
     delta[:, 0] = np.multiply(pi_0, likelihoods[:, 0])
     normalizer[0] = np.sum(delta[:, 0])
     delta[:, 0] /= normalizer[0]
 
-    for t in range(start=1, stop=T):
+    for t in range(1, T):
         for j in range(L):
             # todo invented partial marg name - need to see what it means
             partial_marg = np.multiply(delta[:, t - 1], pi_z[:, j])
@@ -115,7 +115,7 @@ def viterbi(L, data, pi_0, pi_z):
         normalizer[t] = np.sum(delta[:, t])
         delta[:, t] /= normalizer[t]
 
-    state_sequence[T] = np.argmax(delta[:, T])
-    for t in range(start=T - 1, stop=0, step=-1):
-        state_sequence[t] = psi[state_sequence[t + 1], t + 1]
+    state_sequence[T-1] = np.argmax(delta[:, T-1])
+    for t in range(T - 2, -1, -1):
+        state_sequence[t] = psi[state_sequence[t+1], t+1]
     return state_sequence
