@@ -204,7 +204,7 @@ class HDPVar:
         # sampling from cdf
         z[0] = self.sample_state(p_z)
         # update state count
-        N[-1, z[0]] = 1
+        N[-1, z[0]] += 1
         # count for block size
         for k in range(block_size[0]):
             Ns[z[0]] += 1
@@ -212,12 +212,12 @@ class HDPVar:
             # index_seq[tot_seq[z[0]], z[0]] = obs_inds[k]
 
         for t in range(1, T):
-            p_z = np.multiply(self.distributions['transition_probabilities'][z[t - 1]], part_marg_likelihood[:, 1])
+            p_z = np.multiply(self.distributions['transition_probabilities'][z[t - 1]], part_marg_likelihood[:, t])
             # obs_inds = np.arange(block_end[t-1], block_end[t]+1)
             # sampling from cdf
             z[t] = HDPVar.sample_state(p_z)
             # update counts
-            N[z[t - 1], z[t]] += 1
+            N[z[t-1], z[t]] += 1
 
             # count for block size
             for k in range(block_size[t]):

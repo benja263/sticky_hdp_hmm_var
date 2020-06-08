@@ -43,7 +43,7 @@ def forwards_messaging(size, likelihoods, pi_0, pi_z, normalizer=None):
     """
     L, T = size
     fwd_msg = np.zeros((L, T))
-    fwd_msg[:, 0] = np.multiply(likelihoods[:, 1], pi_0)
+    fwd_msg[:, 0] = np.multiply(likelihoods[:, 0], pi_0)
     # normalize
     sum_fwd_msg = np.sum(fwd_msg)
     fwd_msg[:, 0] /= sum_fwd_msg
@@ -58,10 +58,10 @@ def forwards_messaging(size, likelihoods, pi_0, pi_z, normalizer=None):
         # integrate out z[t]
         partial_marg_likelihood = pi_z.transpose().dot(fwd_msg[:, t])
         # multiply likelihood by incoming message
-        fwd_msg[:, t + 1] = np.multiply(partial_marg_likelihood, likelihoods[:, t + 1])
-        sum_fwd_msg = np.sum(fwd_msg[:, t + 1])
-        fwd_msg[:, t + 1] /= sum_fwd_msg
-        normalizer[t + 1] += np.log(sum_fwd_msg)
+        fwd_msg[:, t+1] = np.multiply(partial_marg_likelihood, likelihoods[:, t+1])
+        sum_fwd_msg = np.sum(fwd_msg[:, t+1])
+        fwd_msg[:, t+1] /= sum_fwd_msg
+        normalizer[t+1] += np.log(sum_fwd_msg)
     # return total log-likelihood
     return np.sum(normalizer)
 
@@ -82,9 +82,9 @@ def backwards_messaging(size, pi_z, likelihoods):
 
     for t in range(T - 2, -1, -1):
         # multiply likelihood by incoming message
-        partial_marg_likelihoods[:, t + 1] = np.multiply(likelihoods[:, t + 1], back_msg[:, t + 1])
+        partial_marg_likelihoods[:, t+1] = np.multiply(likelihoods[:, t+1], back_msg[:, t+1])
         # integrate over z(t)
-        back_msg[:, t] = pi_z.dot(partial_marg_likelihoods[:, t + 1])
+        back_msg[:, t] = pi_z.dot(partial_marg_likelihoods[:, t+1])
         # normalize
         back_msg[:, t] /= np.sum(back_msg[:, t])
     # for t=0

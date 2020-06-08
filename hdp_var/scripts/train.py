@@ -22,7 +22,7 @@ data = generate_data_structure(data['data'], order)
 D = data['Y'].shape[0]
 
 model = HDPVar(D, L, order)
-tr = attr.asdict(TrainingParams(iterations=100, sample_every=25, burn_in=20))
+tr = attr.asdict(TrainingParams(iterations=500, sample_every=25, burn_in=20))
 model.set_training_parameters(tr)
 print(model.training_parameters)
 
