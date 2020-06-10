@@ -3,28 +3,48 @@
 """
 
 import pickle
+
 import attr
-from hdp_var.utils.data_preparation import generate_data_structure
+
 from hdp_var.model.hdp_var import HDPVar
-from hdp_var.utils.HMM import viterbi
 from hdp_var.parameters import TrainingParams
+from hdp_var.utils.data_preparation import generate_data_structure
+from hdp_var.utils.stats import median_r_2
+from hdp_var.utils.plot import plot, plot_1, plot_likelihood
 
 data_path = '/Users/benjaminfuhrer/GitHub/hdp_var_python/data/'
-file_name = 'luke_data.pkl'
+file_name = 'fes10.pkl'
+L = 20
+order = 2
+model_name = 'try_model3'
+to_train = True
 
 with open(f'{data_path}{file_name}', 'rb') as f:
     data = pickle.load(f)
 
-L = 20
-order = 2
 
-data = generate_data_structure(data['data'], order)
-D = data['Y'].shape[0]
+train_data = generate_data_structure(data['data'], order)
+test_data = generate_data_structure(data['test_data'], order)
+test_labels = data['test_labels'][order:]
+D = train_data['Y'].shape[0]
 
-model = HDPVar(D, L, order)
-tr = attr.asdict(TrainingParams(iterations=500, sample_every=25, burn_in=20))
-model.set_training_parameters(tr)
-print(model.training_parameters)
+#
+if to_train:
+    model = HDPVar(D, L, order)
+    tr = attr.asdict(TrainingParams(iterations=1000, sample_every=50, burn_in=100))
+    model.set_training_parameters(tr)
+    print(model.training_parameters)
+    model.train(train_data)
+    with open(f'{data_path}{model_name}.pkl', 'wb') as f:
+        pickle.dump(model, f)
+else:
+    with open(f'{data_path}{model_name}.pkl', 'rb') as f:
+        model = pickle.load(f)
 
-state_sequence = model.train(data)
+state_sequence = model.predict_state_sequence(test_data)
+pred_Y = model.predict_data(X_0=test_data['X'], reset_every=50)
+r2 = median_r_2(y=test_data['Y'], pred_y=pred_Y)
+plot_likelihood(model)
+# plot(test_data['Y'][0], pred_Y[0])
+# plot_1(test_data['Y'][0])
 print('')

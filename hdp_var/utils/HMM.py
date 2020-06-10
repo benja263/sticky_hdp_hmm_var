@@ -2,6 +2,7 @@
 Module containing HMM related functions
 """
 import numpy as np
+from scipy.linalg import cholesky, inv
 
 
 def compute_likelihoods(L, data, theta, pi_0, pi_z):
@@ -18,14 +19,14 @@ def compute_likelihoods(L, data, theta, pi_0, pi_z):
     D, T = np.shape(data['Y'])
     log_likelihood = np.zeros((L, T))
     for k in range(L):
-        chol_sigma = np.linalg.cholesky(theta['Sigma'][:, :, k])
-        mu = chol_sigma.dot(data['Y'] - theta['A'][:, :, k].dot(data['X']))
-        log_likelihood[k] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(np.diag(chol_sigma)))
+        chol_inv_sigma = cholesky(theta['Sigma'][:, :, k])
+        mu = chol_inv_sigma.dot(data['Y'] - theta['A'][:, :, k].dot(data['X']))
+        log_likelihood[k] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(np.diag(chol_inv_sigma)))
     normalizer = np.max(log_likelihood, axis=0)
     log_likelihood -= normalizer
 
     likelihoods = np.exp(log_likelihood)
-    normalizer -= (D / 2) * np.log(2 * np.pi)
+    normalizer -= (D / 2.0) * np.log(2.0 * np.pi)
     # forward pass to integrate over the state sequence and the log probability of the evidence
     total_log_likelihood = forwards_messaging((L, T), likelihoods, pi_0, pi_z, normalizer)
     return likelihoods, total_log_likelihood
@@ -38,14 +39,14 @@ def forwards_messaging(size, likelihoods, pi_0, pi_z, normalizer=None):
     :param likelihoods:
     :param pi_0:
     :param pi_z:
-    :param normalizer:
+    :param normalizer: Initialize normalization constant to be that due to the likelihood
     :return:
     """
     L, T = size
     fwd_msg = np.zeros((L, T))
-    fwd_msg[:, 0] = np.multiply(likelihoods[:, 0], pi_0)
+    fwd_msg[:, 0] = likelihoods[:, 0] * pi_0
     # normalize
-    sum_fwd_msg = np.sum(fwd_msg)
+    sum_fwd_msg = np.sum(fwd_msg[:, 0])
     fwd_msg[:, 0] /= sum_fwd_msg
 
     if normalizer is None:
@@ -58,7 +59,7 @@ def forwards_messaging(size, likelihoods, pi_0, pi_z, normalizer=None):
         # integrate out z[t]
         partial_marg_likelihood = pi_z.transpose().dot(fwd_msg[:, t])
         # multiply likelihood by incoming message
-        fwd_msg[:, t+1] = np.multiply(partial_marg_likelihood, likelihoods[:, t+1])
+        fwd_msg[:, t+1] = partial_marg_likelihood * likelihoods[:, t+1]
         sum_fwd_msg = np.sum(fwd_msg[:, t+1])
         fwd_msg[:, t+1] /= sum_fwd_msg
         normalizer[t+1] += np.log(sum_fwd_msg)
@@ -75,24 +76,22 @@ def backwards_messaging(size, pi_z, likelihoods):
     :return:
     """
     L, T = size
-    back_msg = np.zeros((L, T))
-    back_msg[:, -1] = np.ones(L)
-
-    partial_marg_likelihoods = np.zeros(back_msg.shape)
+    back_msg = np.ones(size)
+    partial_marg_likelihoods = np.zeros(size)
 
     for t in range(T - 2, -1, -1):
         # multiply likelihood by incoming message
-        partial_marg_likelihoods[:, t+1] = np.multiply(likelihoods[:, t+1], back_msg[:, t+1])
+        partial_marg_likelihoods[:, t+1] = likelihoods[:, t+1] * back_msg[:, t+1]
         # integrate over z(t)
         back_msg[:, t] = pi_z.dot(partial_marg_likelihoods[:, t+1])
         # normalize
         back_msg[:, t] /= np.sum(back_msg[:, t])
     # for t=0
-    partial_marg_likelihoods[:, 0] = np.multiply(likelihoods[:, 0], back_msg[:, 0])
+    partial_marg_likelihoods[:, 0] = likelihoods[:, 0] * back_msg[:, 0]
     return partial_marg_likelihoods
 
 
-def viterbi(L, data, theta,pi_0, pi_z):
+def viterbi(L, data, theta, pi_0, pi_z):
     """
 
     :return:
