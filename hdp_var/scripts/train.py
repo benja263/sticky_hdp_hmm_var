@@ -29,22 +29,32 @@ test_labels = data['test_labels'][order:]
 D = train_data['Y'].shape[0]
 
 #
-if to_train:
-    model = HDPVar(D, L, order)
-    tr = attr.asdict(TrainingParams(iterations=1000, sample_every=50, burn_in=100))
-    model.set_training_parameters(tr)
-    print(model.training_parameters)
-    model.train(train_data)
-    with open(f'{data_path}{model_name}.pkl', 'wb') as f:
-        pickle.dump(model, f)
-else:
-    with open(f'{data_path}{model_name}.pkl', 'rb') as f:
-        model = pickle.load(f)
+r2_s = []
+i = 1
+while i <= 10:
+    print('**********************************************************')
+    print(f'model: {i}')
+    if to_train:
+        model = HDPVar(D, L, order)
+        tr = attr.asdict(TrainingParams(iterations=500, sample_every=25, burn_in=100, print_every=100))
+        model.set_training_parameters(tr)
+        print(model.training_parameters)
+        model.train(train_data)
+        with open(f'{data_path}{model_name}.pkl', 'wb') as f:
+            pickle.dump(model, f)
+    else:
+        with open(f'{data_path}{model_name}.pkl', 'rb') as f:
+            model = pickle.load(f)
 
-state_sequence = model.predict_state_sequence(test_data)
-pred_Y = model.predict_data(X_0=test_data['X'], reset_every=50)
-r2 = median_r_2(y=test_data['Y'], pred_y=pred_Y)
-plot_likelihood(model)
-# plot(test_data['Y'][0], pred_Y[0])
-# plot_1(test_data['Y'][0])
+    state_sequence = model.predict_state_sequence(test_data)
+    pred_Y = model.predict_data(X_0=test_data['X'], reset_every=50)
+    r2 = median_r_2(y=test_data['Y'], pred_y=pred_Y)
+    r2_s.append(r2)
+    i += 1
+    print(r2)
+    print('**********************************************************')
+    # plot_likelihood(model)
+    # plot(test_data['Y'][0], pred_Y[0])
+    # plot_1(test_data['Y'][0])
+print(r2_s)
 print('')

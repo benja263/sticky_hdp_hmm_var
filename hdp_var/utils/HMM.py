@@ -3,6 +3,7 @@ Module containing HMM related functions
 """
 import numpy as np
 from scipy.linalg import cholesky, inv
+from hdp_var.utils import SMOOTHING_CONSTANT
 
 
 def compute_likelihoods(L, data, theta, pi_0, pi_z):
@@ -19,9 +20,8 @@ def compute_likelihoods(L, data, theta, pi_0, pi_z):
     D, T = np.shape(data['Y'])
     log_likelihood = np.zeros((L, T))
     for k in range(L):
-        chol_inv_sigma = cholesky(theta['Sigma'][:, :, k])
-        mu = chol_inv_sigma.dot(data['Y'] - theta['A'][:, :, k].dot(data['X']))
-        log_likelihood[k] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(np.diag(chol_inv_sigma)))
+        mu = theta['inv_sigma'][:, :, k].dot(data['Y'] - theta['A'][:, :, k].dot(data['X']))
+        log_likelihood[k] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(np.diag(theta['inv_sigma'][:, :, k])))
     normalizer = np.max(log_likelihood, axis=0)
     log_likelihood -= normalizer
 
@@ -54,14 +54,17 @@ def forwards_messaging(size, likelihoods, pi_0, pi_z, normalizer=None):
     # add the constant for normalizing the forward message
     # murphy's book page 611 Z is the constant
     normalizer[0] += np.log(sum_fwd_msg)
+
     # compute messages forward in time
+
     for t in range(T - 1):
         # integrate out z[t]
         partial_marg_likelihood = pi_z.transpose().dot(fwd_msg[:, t])
         # multiply likelihood by incoming message
-        fwd_msg[:, t+1] = partial_marg_likelihood * likelihoods[:, t+1]
+        fwd_msg[:, t+1] = partial_marg_likelihood * likelihoods[:, t+1] + SMOOTHING_CONSTANT
         sum_fwd_msg = np.sum(fwd_msg[:, t+1])
         fwd_msg[:, t+1] /= sum_fwd_msg
+
         normalizer[t+1] += np.log(sum_fwd_msg)
     # return total log-likelihood
     return np.sum(normalizer)
@@ -83,7 +86,7 @@ def backwards_messaging(size, pi_z, likelihoods):
         # multiply likelihood by incoming message
         partial_marg_likelihoods[:, t+1] = likelihoods[:, t+1] * back_msg[:, t+1]
         # integrate over z(t)
-        back_msg[:, t] = pi_z.dot(partial_marg_likelihoods[:, t+1])
+        back_msg[:, t] = pi_z.dot(partial_marg_likelihoods[:, t+1]) + SMOOTHING_CONSTANT
         # normalize
         back_msg[:, t] /= np.sum(back_msg[:, t])
     # for t=0
