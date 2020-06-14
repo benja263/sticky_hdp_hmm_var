@@ -40,21 +40,3 @@ class TrainingParams:
     print_every = attr.ib(default=None)
     burn_in = attr.ib(default=None)
 
-
-# def get_sampling_params(K, M, S_0, n_0, a_gamma, b_gamma, a_alpha, b_alpha, c, d):
-#     """
-#
-#
-#     :return:
-#     """
-#     return SamplingParams(K=K, M=M, S_0=S_0, n_0=n_0, a_gamma=a_gamma, b_gamma=b_gamma,
-#                           a_alpha=a_alpha, b_alpha=b_alpha, c=c, d=d)
-#
-#
-# def get_training_params(iterations, save_every, print_every, burn_in):
-#     """
-#
-#
-#     :return:
-#     """
-#     return TrainingParams(iterations=iterations, save_every=save_every, print_every=print_every, burn_in=burn_in)

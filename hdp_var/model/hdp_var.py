@@ -57,7 +57,7 @@ class HDPVar:
 
         self.training_parameters = {'iterations': 1000, 'sample_every': 100, 'print_every': 100, 'burn_in': 100}
         self.sampling_parameters = {'K': np.linalg.inv(np.diag(0.5 * np.ones(self.D * self.order))),
-                                    'M': np.zeros((self.D, self.D * self.order)), 'S_0': 1000*np.eye(self.D),
+                                    'M': np.zeros((self.D, self.D * self.order)), 'S_0': np.eye(self.D),
                                     'n_0': self.D + 2, 'a_gamma': 1, 'b_gamma': 0.001, 'a_alpha': 1,
                                     'b_alpha': 0.001, 'c': 100, 'd': 1}
         self.concentration_parameters = dict()
@@ -85,11 +85,12 @@ class HDPVar:
     def set_sampling_parameters(self, params):
         """
 
-        :param params:
+        :param params: training parameters
         :return:
         """
         self.sampling_parameters = {key: params.get(key,
-                                                    self.sampling_parameters[key]) for key in
+                                                    self.sampling_parameters[key]) if params.get(key, None) is not None
+        else self.sampling_parameters[key] for key in
                                     self.sampling_parameters.keys()}
         self.init_conc_parameters()
 
@@ -353,18 +354,12 @@ class HDPVar:
         for k in range(self.L):
             sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
                                scale=self.sampling_parameters['S_0'] + 0, seed=seed).rvs()
-            chol_sigma, inv_chol_sigma = cholesky(sigma, lower=True), cholesky(inv(sigma))
-            inv_K = cholesky(inv(self.sampling_parameters['K']))
-            try:
-                A = matrix_normal(mean=self.sampling_parameters['M'], rowcov=sigma, colcov=cholesky(inv(self.sampling_parameters['K']))).rvs()
-            except ValueError:
-                A = np.random.default_rng().multivariate_normal(check_valid='ignore',
-                                                                mean=self.sampling_parameters['M'].T.flatten(),
-                                                                cov=np.kron(inv_K,
-                                                                            chol_sigma)).reshape(
-                    self.theta['A'][:, :, k].shape)
+            # chol_sigma, inv_chol_sigma = cholesky(sigma, lower=True), cholesky(inv(sigma))
+            # inv_K = cholesky(inv(self.sampling_parameters['K']))
+            A = matrix_normal(mean=self.sampling_parameters['M'], rowcov=sigma, colcov=self.sampling_parameters['K']).rvs()
+
             self.theta['A'][:, :, k] = A
-            self.theta['inv_sigma'][:, :, k] = inv_chol_sigma.transpose().dot(inv_chol_sigma)
+            self.theta['inv_sigma'][:, :, k] = inv(sigma)
 
     def sample_theta(self, data_statistics):
         """
@@ -384,14 +379,14 @@ class HDPVar:
             s_ygx = (s_ygx + np.transpose(s_ygx)) / 2
             sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
                                scale=self.sampling_parameters['S_0'] + s_ygx).rvs()
-            chol_sigma, inv_chol_sigma = cholesky(sigma, lower=True), cholesky(inv(sigma))
-            try:
-                A = matrix_normal(mean=s_yx_s_xx_inv, rowcov=sigma, colcov=cholesky(inv(s_xx))).rvs()
-            except ValueError:
-                A = np.random.default_rng().multivariate_normal(check_valid='ignore', mean=s_yx_s_xx_inv.T.flatten(),
-                                                                cov=np.kron(cholesky(inv(s_xx)),
-                                                                            chol_sigma)).reshape(
-                    self.theta['A'][:, :, k].shape)
+            # chol_sigma, inv_chol_sigma = cholesky(sigma, lower=True), cholesky(inv(sigma))
+            # try:
+            A = matrix_normal(mean=s_yx_s_xx_inv, rowcov=sigma, colcov=s_xx).rvs()
+            # except ValueError:
+            #     A = np.random.default_rng().multivariate_normal(check_valid='ignore', mean=s_yx_s_xx_inv.T.flatten(),
+            #                                                     cov=np.kron(cholesky(inv(s_xx)),
+            #                                                                 chol_sigma)).reshape(
+            #         self.theta['A'][:, :, k].shape)
             self.theta['A'][:, :, k] = A
             self.theta['inv_sigma'][:, :, k] = inv(sigma) # inv_chol_sigma.transpose().dot(inv_chol_sigma)
 
