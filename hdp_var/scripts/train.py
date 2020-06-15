@@ -38,10 +38,10 @@ while i <= 10:
     if to_train:
         model = HDPVar(D, L, order)
         tr = attr.asdict(TrainingParams(iterations=500, sample_every=25, burn_in=100, print_every=100))
-        s_params = attr.asdict(SamplingParams(S_0=0.1*np.eye(D), b_gamma=0.01, b_alpha=0.01))
+        #s_params = attr.asdict(SamplingParams(S_0=0.1*np.eye(D), b_gamma=0.01, b_alpha=0.01))
         model.set_training_parameters(tr)
         print(model.training_parameters)
-        model.set_sampling_parameters(s_params)
+        #model.set_sampling_parameters(s_params)
         print(model.sampling_parameters)
         model.train(train_data)
         with open(f'{data_path}{model_name}.pkl', 'wb') as f:

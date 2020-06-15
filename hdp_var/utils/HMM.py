@@ -20,8 +20,8 @@ def compute_likelihoods(L, data, theta, pi_0, pi_z):
     D, T = np.shape(data['Y'])
     log_likelihood = np.zeros((L, T))
     for k in range(L):
-        mu = theta['inv_sigma'][:, :, k].dot(data['Y'] - theta['A'][:, :, k].dot(data['X']))
-        log_likelihood[k] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(np.diag(theta['inv_sigma'][:, :, k])))
+        mu = cholesky(theta['inv_sigma'][:, :, k]) @ (data['Y'] - theta['A'][:, :, k] @ data['X'])
+        log_likelihood[k] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(np.diag(cholesky(theta['inv_sigma'][:, :, k]))))
     normalizer = np.max(log_likelihood, axis=0)
     log_likelihood -= normalizer
 
@@ -43,7 +43,7 @@ def forwards_messaging(size, likelihoods, pi_0, pi_z, normalizer=None):
     :return:
     """
     L, T = size
-    fwd_msg = np.zeros((L, T))
+    fwd_msg = np.ones((L, T))
     fwd_msg[:, 0] = likelihoods[:, 0] * pi_0
     # normalize
     sum_fwd_msg = np.sum(fwd_msg[:, 0])
@@ -59,7 +59,7 @@ def forwards_messaging(size, likelihoods, pi_0, pi_z, normalizer=None):
 
     for t in range(T - 1):
         # integrate out z[t]
-        partial_marg_likelihood = pi_z.transpose().dot(fwd_msg[:, t])
+        partial_marg_likelihood = pi_z.T @ (fwd_msg[:, t])
         # multiply likelihood by incoming message
         fwd_msg[:, t+1] = partial_marg_likelihood * likelihoods[:, t+1] + SMOOTHING_CONSTANT
         sum_fwd_msg = np.sum(fwd_msg[:, t+1])
@@ -86,7 +86,7 @@ def backwards_messaging(size, pi_z, likelihoods):
         # multiply likelihood by incoming message
         partial_marg_likelihoods[:, t+1] = likelihoods[:, t+1] * back_msg[:, t+1]
         # integrate over z(t)
-        back_msg[:, t] = pi_z.dot(partial_marg_likelihoods[:, t+1]) + SMOOTHING_CONSTANT
+        back_msg[:, t] = pi_z @ partial_marg_likelihoods[:, t+1]
         # normalize
         back_msg[:, t] /= np.sum(back_msg[:, t])
     # for t=0
@@ -105,14 +105,14 @@ def viterbi(L, data, theta, pi_0, pi_z):
     state_sequence = np.zeros(T, dtype=int)
     normalizer = np.ones(T)
 
-    delta[:, 0] = np.multiply(pi_0, likelihoods[:, 0])
+    delta[:, 0] = pi_0 * likelihoods[:, 0]
     normalizer[0] = np.sum(delta[:, 0])
     delta[:, 0] /= normalizer[0]
 
     for t in range(1, T):
         for j in range(L):
             # todo invented partial marg name - need to see what it means
-            partial_marg = np.multiply(delta[:, t - 1], pi_z[:, j])
+            partial_marg = delta[:, t - 1] * pi_z[:, j]
             delta[j, t], psi[j, t] = np.max(partial_marg) * likelihoods[j, t], np.argmax(partial_marg)
         normalizer[t] = np.sum(delta[:, t])
         delta[:, t] /= normalizer[t]

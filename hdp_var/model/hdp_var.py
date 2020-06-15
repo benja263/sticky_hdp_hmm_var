@@ -136,7 +136,7 @@ class HDPVar:
                 self.param_tracking['gamma'].append(self.concentration_parameters['gamma'])
                 self.param_tracking['alpha_p_kappa'].append(self.concentration_parameters['alpha_p_kappa'])
                 self.param_tracking['rho'].append(self.concentration_parameters['rho'])
-                self.param_tracking['pz_0'].append(self.distributions['pz_0'])
+                self.param_tracking['pi_z'].append(self.distributions['pi_z'])
                 self.param_tracking['pi_0'].append(self.distributions['pi_0'])
                 self.param_tracking['beta'].append(self.distributions['beta'])
             if iteration != 1 and iteration % self.training_parameters['print_every'] == 0:
@@ -153,7 +153,7 @@ class HDPVar:
         """
         params = self.get_best_iteration()
         self.state_sequence = viterbi(self.L, data, theta={'A': params['A'], 'inv_sigma': params['inv_sigma']},
-                                      pi_0=params['pi_0'], pi_z=params['pz_0'])
+                                      pi_0=params['pi_0'], pi_z=params['pi_z'])
         self.theta['A'], self.theta['inv_sigma'] = params['A'], params['inv_sigma']
         return self.state_sequence
 
@@ -195,16 +195,13 @@ class HDPVar:
             # kronecker's alpha_p_kappa construction
             kron_apk = np.zeros(beta.shape)
             kron_apk[k] = 1
-            try:
-                pi_z[k] = rng.dirichlet(alpha * beta + self.state_counts['N'][k] + kappa * kron_apk)
-            except:
-                pi_z[k] = rng.dirichlet(alpha * beta + self.state_counts['N'][k] + kappa * kron_apk + SMOOTHING_CONSTANT)
+            # try:
+            pi_z[k] = rng.dirichlet(alpha * beta + self.state_counts['N'][k] + kappa * kron_apk)
+            # except:
+            #     pi_z[k] = rng.dirichlet(alpha * beta + self.state_counts['N'][k] + kappa * kron_apk + SMOOTHING_CONSTANT)
         # initial probabilities
-        try:
-            pi_0 = rng.dirichlet(alpha * beta + self.state_counts['N'][self.L])
-        except:
-            pi_0 = rng.dirichlet(alpha * beta + self.state_counts['N'][self.L] + SMOOTHING_CONSTANT)
-        self.distributions['pz_0'] = pi_z
+        pi_0 = rng.dirichlet(alpha * beta + self.state_counts['N'][self.L])
+        self.distributions['pi_z'] = pi_z
         self.distributions['pi_0'] = pi_0
         self.distributions['beta'] = beta
 
@@ -216,14 +213,14 @@ class HDPVar:
         """
         self.likelihoods, total_log_likelihood = compute_likelihoods(self.L, data, self.theta,
                                                                      self.distributions['pi_0'],
-                                                                     self.distributions['pz_0'])
+                                                                     self.distributions['pi_z'])
         # number of observations
         T = np.shape(data['Y'])[1]
         block_size = data['block_size']
         block_end = data['block_end']
 
         part_marg_likelihood = backwards_messaging(size=(self.L, T),
-                                                   pi_z=self.distributions['pz_0'],
+                                                   pi_z=self.distributions['pi_z'],
                                                    likelihoods=self.likelihoods)
         z = np.zeros(T, dtype=int)
         # forward run
@@ -249,7 +246,7 @@ class HDPVar:
             # index_seq[tot_seq[z[0]], z[0]] = obs_inds[k]
 
         for t in range(1, T):
-            p_z = self.distributions['pz_0'][z[t - 1]] * part_marg_likelihood[:, t]
+            p_z = self.distributions['pi_z'][z[t - 1]] * part_marg_likelihood[:, t]
             # obs_inds = np.arange(block_end[t-1], block_end[t]+1)
             # sampling from cdf
             z[t] = self.sample_state(p_z)
@@ -354,10 +351,7 @@ class HDPVar:
         for k in range(self.L):
             sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
                                scale=self.sampling_parameters['S_0'] + 0, seed=seed).rvs()
-            # chol_sigma, inv_chol_sigma = cholesky(sigma, lower=True), cholesky(inv(sigma))
-            # inv_K = cholesky(inv(self.sampling_parameters['K']))
             A = matrix_normal(mean=self.sampling_parameters['M'], rowcov=sigma, colcov=self.sampling_parameters['K']).rvs()
-
             self.theta['A'][:, :, k] = A
             self.theta['inv_sigma'][:, :, k] = inv(sigma)
 
@@ -370,25 +364,17 @@ class HDPVar:
         S_xx, S_yy, S_yx = data_statistics
         for k in range(self.L):
             s_xx = S_xx[:, :, k] + self.sampling_parameters['K']
-            s_yx = S_yx[:, :, k] + self.sampling_parameters['M'].dot(self.sampling_parameters['K'])
-            s_yy = S_yy[:, :, k] + self.sampling_parameters['M'].dot(
-                self.sampling_parameters['K'].dot(np.transpose(self.sampling_parameters['M'])))
-            s_yx_s_xx_inv = right_divison(s_yx, s_xx)
-            s_ygx = s_yy - s_yx_s_xx_inv.dot(np.transpose(s_yx))
+            s_yx = S_yx[:, :, k] + self.sampling_parameters['M'] @ self.sampling_parameters['K']
+            s_yy = S_yy[:, :, k] + self.sampling_parameters['M'] @ (self.sampling_parameters['K'] @ self.sampling_parameters['M'].T)
+            M = s_yx @ inv(s_xx)
+            s_ygx = s_yy - M @ s_yx.T
             # enforce symmetry
-            s_ygx = (s_ygx + np.transpose(s_ygx)) / 2
+            s_ygx = (s_ygx + s_ygx.T) / 2
             sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
                                scale=self.sampling_parameters['S_0'] + s_ygx).rvs()
-            # chol_sigma, inv_chol_sigma = cholesky(sigma, lower=True), cholesky(inv(sigma))
-            # try:
-            A = matrix_normal(mean=s_yx_s_xx_inv, rowcov=sigma, colcov=s_xx).rvs()
-            # except ValueError:
-            #     A = np.random.default_rng().multivariate_normal(check_valid='ignore', mean=s_yx_s_xx_inv.T.flatten(),
-            #                                                     cov=np.kron(cholesky(inv(s_xx)),
-            #                                                                 chol_sigma)).reshape(
-            #         self.theta['A'][:, :, k].shape)
+            A = matrix_normal(mean=M, rowcov=sigma, colcov=s_xx).rvs()
             self.theta['A'][:, :, k] = A
-            self.theta['inv_sigma'][:, :, k] = inv(sigma) # inv_chol_sigma.transpose().dot(inv_chol_sigma)
+            self.theta['inv_sigma'][:, :, k] = inv(sigma)
 
     def sample_hyperparameters(self, seed=None):
         """
