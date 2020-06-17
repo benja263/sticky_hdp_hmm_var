@@ -15,7 +15,7 @@ def plot_likelihood(model):
     if model.training_parameters['iterations'] not in iterations:
         iterations.append(model.training_parameters['iterations'])
     fig, ax = plt.subplots()
-    ax.plot(iterations, model.total_log_likelihoods)
+    ax.plot(iterations, model.sequence_log_likelihoods)
     plt.xlabel('Iteration')
     plt.ylabel('Log-Likelihood')
     plt.tight_layout()

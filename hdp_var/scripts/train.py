@@ -17,7 +17,7 @@ data_path = '/Users/benjaminfuhrer/GitHub/hdp_var_python/data/'
 file_name = 'fes10.pkl'
 L = 20
 order = 2
-model_name = 'try_model3'
+model_name = 'model_1'
 to_train = True
 
 with open(f'{data_path}{file_name}', 'rb') as f:
@@ -32,12 +32,12 @@ D = train_data['Y'].shape[0]
 #
 r2_s = []
 i = 1
-while i <= 10:
+while i <= 1:
     print('**********************************************************')
     print(f'model: {i}')
     if to_train:
         model = HDPVar(D, L, order)
-        tr = attr.asdict(TrainingParams(iterations=500, sample_every=25, burn_in=100, print_every=100))
+        tr = attr.asdict(TrainingParams(iterations=2500, sample_every=25, burn_in=100, print_every=100))
         #s_params = attr.asdict(SamplingParams(S_0=0.1*np.eye(D), b_gamma=0.01, b_alpha=0.01))
         model.set_training_parameters(tr)
         print(model.training_parameters)
@@ -54,9 +54,11 @@ while i <= 10:
     pred_Y = model.predict_data(X_0=test_data['X'], reset_every=50)
     r2 = median_r_2(y=test_data['Y'], pred_y=pred_Y)
     r2_s.append(r2)
-    i += 1
+    with open(f'{data_path}/model_{i}.pkl', 'wb') as f:
+        pickle.dump(model, f)
     print(r2)
     print('**********************************************************')
+    i += 1
     # plot_likelihood(model)
     # plot(test_data['Y'][0], pred_Y[0])
     # plot_1(test_data['Y'][0])
