@@ -228,6 +228,7 @@ class HDPVar:
                                        pi_z=self.distributions['pi_z'],
                                        log_likelihoods=log_likelihoods)
         back_msg = ex_exp(log_messages - np.max(log_messages, axis=0))
+        back_msg = softmax(back_msg, axis=0)
         z = np.zeros(T, dtype=int)
         # forward run
         # pre-allocate indices

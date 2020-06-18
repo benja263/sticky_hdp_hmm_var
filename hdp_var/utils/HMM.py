@@ -58,10 +58,13 @@ def forwards_messaging(size, log_likelihoods, pi_0, pi_z, normalizer=None):
     # murphy's book page 611 Z is the constant
 
     for t in range(T - 1):
-        log_alpha[:, t]
-        log_alpha[:, t + 1] = log_sum_exp(log_pi_z.T + log_alpha[:, t] + log_likelihoods[:, t + 1])
-        alpha[:, t + 1], Z[t] = log_softmax(log_alpha[:, t + 1])
-    return alpha, np.sum(normalizer + Z)
+        for j in range(L):
+            accumulator = np.nan
+            for i in range(L):
+                accumulator = elnsum(accumulator, elnproduct(log_alpha[i, t], log_pi_z[i, j]))
+            log_alpha[j, t + 1] = elnproduct(accumulator, log_likelihoods[j, t])
+    normalizer += np.max(log_alpha, axis=0)
+    return log_alpha, normalizer
 
 
 def backwards_messaging(size, pi_z, log_likelihoods):
