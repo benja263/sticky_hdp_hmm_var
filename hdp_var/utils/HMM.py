@@ -30,8 +30,7 @@ def compute_likelihoods(L, data, theta, pi_0, pi_z):
     # log_likelihoods -= normalizer
     normalizer -= (D / 2.0) * np.log(2.0 * np.pi)
     # forward pass to integrate over the state sequence and the log probability of the evidence
-    # forward_messages, sequence_log_likelihood = forwards_messaging((L, T), log_likelihoods, pi_0, pi_z, normalizer)
-    sequence_log_likelihood = -0.5
+    forward_messages, sequence_log_likelihood = forwards_messaging((L, T), log_likelihoods, pi_0, pi_z, normalizer)
     return log_likelihoods, sequence_log_likelihood
 
 
@@ -47,12 +46,11 @@ def forwards_messaging(size, log_likelihoods, pi_0, pi_z, normalizer=None):
     """
     L, T = size
     # initializing with very small numbers to avoid taking the log of 0
-    log_pi_0, log_pi_z = np.full(fill_value=np.finfo(float).min,
-                                 shape=pi_0.shape), np.full(fill_value=np.finfo(float).min, shape=pi_z.shape)
-    np.log(pi_0, where=pi_0 > 0.0, out=log_pi_0), np.log(pi_z, where=pi_z > 0.0, out=log_pi_z)
-    log_alpha, alpha, Z = np.zeros(size), np.zeros(size), np.zeros(T)
+    log_pi_z, log_pi_0 = ex_log(pi_z), ex_log(pi_0)
 
-    log_alpha[:, 0] = log_likelihoods[:, 0] + log_pi_0
+    log_alpha = np.zeros(size)
+
+    log_alpha[:, 0] = ex_log_product(log_pi_0, log_likelihoods[:, 0])
 
     if normalizer is None:
         normalizer = np.zeros(T)
@@ -60,6 +58,7 @@ def forwards_messaging(size, log_likelihoods, pi_0, pi_z, normalizer=None):
     # murphy's book page 611 Z is the constant
 
     for t in range(T - 1):
+        log_alpha[:, t]
         log_alpha[:, t + 1] = log_sum_exp(log_pi_z.T + log_alpha[:, t] + log_likelihoods[:, t + 1])
         alpha[:, t + 1], Z[t] = log_softmax(log_alpha[:, t + 1])
     return alpha, np.sum(normalizer + Z)
