@@ -6,8 +6,10 @@ from collections import defaultdict
 import numpy as np
 from scipy.linalg import inv
 from scipy.stats import invwishart, matrix_normal, dirichlet
+from scipy.special import softmax
 
 from hdp_var.utils.HMM import compute_likelihoods, backwards_messaging, viterbi, normalize, log_softmax, viterbi_path
+from hdp_var.utils.extended_math import ex_exp
 
 
 class HDPVar:
@@ -225,6 +227,7 @@ class HDPVar:
         log_messages = backwards_messaging(size=(self.L, T),
                                        pi_z=self.distributions['pi_z'],
                                        log_likelihoods=log_likelihoods)
+        back_msg = ex_exp(log_messages - np.max(log_messages, axis=0))
         z = np.zeros(T, dtype=int)
         # forward run
         # pre-allocate indices
@@ -235,32 +238,32 @@ class HDPVar:
         # transition probabilities
         N = np.zeros(self.state_counts['N'].shape, dtype=int)
 
-        log_pi_0, log_pi_z = np.full(fill_value=np.finfo(float).min,
-                                     shape=pi_0.shape), np.full(fill_value=np.finfo(float).min, shape=pi_z.shape)
-        np.log(pi_0, where=pi_0 > 0.0, out=log_pi_0), np.log(pi_z, where=pi_z > 0.0, out=log_pi_z)
+        # log_pi_0, log_pi_z = np.full(fill_value=np.finfo(float).min,
+        #                              shape=pi_0.shape), np.full(fill_value=np.finfo(float).min, shape=pi_z.shape)
+        # np.log(pi_0, where=pi_0 > 0.0, out=log_pi_0), np.log(pi_z, where=pi_z > 0.0, out=log_pi_z)
         # initialize
-        log_f = log_pi_0 + log_messages[:, 0]
+        f = softmax(pi_0 * back_msg[:, 0])
         # obs_inds = np.arange(block_end[0])
         # sampling from cdf
-        z[0] = self.sample_state(np.exp(log_softmax(log_f)[0]).flatten())
+        z[0] = self.sample_state(f)
         # update state count
         N[-1, z[0]] += 1
         # count for block size
-        for k in range(block_size[0]):
-            Ns[z[0]] += 1
+        # for k in range(block_size[0]):
+        Ns[z[0]] += 1
             # tot_seq[z[0]] += 1
             # index_seq[tot_seq[z[0]], z[0]] = obs_inds[k]
 
         for t in range(1, T):
-            log_f = log_pi_z[z[t - 1]] + log_messages[:, t]
+            f = softmax(pi_z[z[t - 1]] * back_msg[:, t])
             # obs_inds = np.arange(block_end[t-1], block_end[t]+1)
-            z[t] = self.sample_state(np.exp(log_softmax(log_f)[0]).flatten())
+            z[t] = self.sample_state(f)
             # update counts
             N[z[t - 1], z[t]] += 1
 
             # count for block size
-            for k in range(block_size[t]):
-                Ns[z[t]] += 1
+            # for k in range(block_size[t]):
+            Ns[z[t]] += 1
                 # tot_seq[z[t]] += 1
                 # index_seq[tot_seq[z[t]], z[t]] = obs_inds[k]
 

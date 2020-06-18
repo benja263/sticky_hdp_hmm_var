@@ -37,7 +37,7 @@ while i <= 1:
     print(f'model: {i}')
     if to_train:
         model = HDPVar(D, L, order)
-        tr = attr.asdict(TrainingParams(iterations=2500, sample_every=25, burn_in=100, print_every=100))
+        tr = attr.asdict(TrainingParams(iterations=2500, sample_every=10, burn_in=100, print_every=1))
         #s_params = attr.asdict(SamplingParams(S_0=0.1*np.eye(D), b_gamma=0.01, b_alpha=0.01))
         model.set_training_parameters(tr)
         print(model.training_parameters)
