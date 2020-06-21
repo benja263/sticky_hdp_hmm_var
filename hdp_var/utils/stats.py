@@ -34,6 +34,8 @@ def median_r_2(y, pred_y):
     :param pred_y:
     :return:
     """
-    MSE = np.square(np.subtract(y, pred_y)).mean(axis=1)
-    return np.median(1 - MSE / np.var(pred_y, axis=1))
+    MSE = np.square(np.subtract(y, pred_y)).sum(axis=1)
+    mean_y = np.mean(y, axis=1)[:, np.newaxis]
+    return np.median(1 - MSE / np.square(np.subtract(y, mean_y)).sum(axis=1))
+
 

@@ -34,7 +34,7 @@ class HDPVar:
         """
         self.distributions = dict()
         # model parameters
-        self.theta = {'A': np.empty((D, D * order, L)), 'sigma': np.empty((D, D, L))}
+        self.theta = {'A': np.ones((D, D * order, L)), 'sigma': np.ones((D, D, L))}
 
         self.state_sequence = []
         # statistics of state occurrences
@@ -55,7 +55,7 @@ class HDPVar:
         # number of dimensions
         self.D = D
 
-        self.training_parameters = {'iterations': 1000, 'sample_every': 100, 'print_every': 100, 'burn_in': 100}
+        self.training_parameters = {'iterations': 1000, 'sample_every': 15, 'print_every': 100, 'burn_in': 100}
         self.sampling_parameters = {'K': np.linalg.inv(np.diag(0.5 * np.ones(self.D * self.order))),
                                     'M': np.zeros((self.D, self.D * self.order)), 'S_0': np.eye(self.D),
                                     'n_0': self.D + 2, 'a_gamma': 1, 'b_gamma': 0.001, 'a_alpha': 1,
@@ -125,8 +125,7 @@ class HDPVar:
             self.sample_theta(self.calculate_statistics(data))
             self.sample_hyperparameters(seed)
 
-            if iteration != 1 and iteration % self.training_parameters['sample_every'] == 0 and \
-                    iteration != self.training_parameters['iterations']:
+            if iteration >= self.training_parameters['burn_in'] and iteration % self.training_parameters['sample_every'] == 0:
                 self.sequence_log_likelihoods.append(sequence_log_likelihood)
                 self.param_tracking['state_sequence'].append(self.state_sequence)
                 self.param_tracking['A'].append(self.theta['A'])
@@ -138,8 +137,9 @@ class HDPVar:
                 self.param_tracking['pi_z'].append(self.distributions['pi_z'])
                 self.param_tracking['pi_0'].append(self.distributions['pi_0'])
                 self.param_tracking['beta'].append(self.distributions['beta'])
-            if iteration != 1 and iteration % self.training_parameters['print_every'] == 0:
+            if iteration % self.training_parameters['print_every'] == 0:
                 print(f"Iteration: {iteration}/{self.training_parameters['iterations']}")
+                print(f'Sequence log-likelihood: {sequence_log_likelihood}')
             self.iteration = iteration
 
         print(f'Training has stopped at iteration: {self.iteration}')
@@ -156,7 +156,7 @@ class HDPVar:
         # self.state_sequence = viterbi(self.L, data, theta={'A': params['A'], 'sigma': params['sigma']},
         #                               pi_0=params['pi_0'], pi_z=params['pi_z'])
         self.state_sequence = viterbi_path(prior=self.distributions['pi_0'], transmat=self.distributions['pi_z'],
-                                           obslik=np.exp(log_likelihoods))
+                                           obslik=ex_exp(log_likelihoods - np.max(log_likelihoods, axis=0)))
         self.theta['A'], self.theta['sigma'] = params['A'], params['sigma']
         return self.state_sequence
 
@@ -200,7 +200,8 @@ class HDPVar:
             kron_apk = np.zeros(beta.shape)
             kron_apk[k] = 1
             # try:
-            pi_z[k] = dirichlet((alpha * beta + self.state_counts['N'][k] + kappa * kron_apk).flatten()).rvs(random_state=seed).flatten()
+            pi_z[k] = dirichlet((alpha * beta + self.state_counts['N'][k] + kappa * kron_apk).flatten()).rvs(
+                random_state=seed).flatten()
             # except:
             #     pi_z[k] = rng.dirichlet(alpha * beta + self.state_counts['N'][k] + kappa * kron_apk + SMOOTHING_CONSTANT)
         # initial probabilities
@@ -217,22 +218,22 @@ class HDPVar:
         """
         pi_0, pi_z = self.distributions['pi_0'], self.distributions['pi_z']
         log_likelihoods, sequence_log_likelihood = compute_likelihoods(self.L, data, self.theta,
-                                                 self.distributions['pi_0'],
-                                                 self.distributions['pi_z'])
+                                                                       self.distributions['pi_0'],
+                                                                       self.distributions['pi_z'])
         # number of observations
         T = np.shape(data['Y'])[1]
         block_size = data['block_size']
         block_end = data['block_end']
 
         log_messages = backwards_messaging(size=(self.L, T),
-                                       pi_z=self.distributions['pi_z'],
-                                       log_likelihoods=log_likelihoods)
+                                           pi_z=pi_z,
+                                           log_likelihoods=log_likelihoods)
         back_msg = ex_exp(log_messages - np.max(log_messages, axis=0))
         back_msg = softmax(back_msg, axis=0)
         z = np.zeros(T, dtype=int)
         # forward run
         # pre-allocate indices
-        assignment_info = [{'indices': np.zeros(T, dtype=int), 'total_count': 0} for k in range(self.L)]
+        # assignment_info = [{'indices': np.zeros(T, dtype=int), 'total_count': 0} for k in range(self.L)]
         # tot_seq = np.zeros(self.L, dtype=int)
         # index_seq = np.zeros((T, self.L), dtype=int)
         Ns = np.zeros(self.state_counts['Ns'].shape, dtype=int)
@@ -252,8 +253,8 @@ class HDPVar:
         # count for block size
         # for k in range(block_size[0]):
         Ns[z[0]] += 1
-            # tot_seq[z[0]] += 1
-            # index_seq[tot_seq[z[0]], z[0]] = obs_inds[k]
+        # tot_seq[z[0]] += 1
+        # index_seq[tot_seq[z[0]], z[0]] = obs_inds[k]
 
         for t in range(1, T):
             f = softmax(pi_z[z[t - 1]] * back_msg[:, t])
@@ -265,8 +266,8 @@ class HDPVar:
             # count for block size
             # for k in range(block_size[t]):
             Ns[z[t]] += 1
-                # tot_seq[z[t]] += 1
-                # index_seq[tot_seq[z[t]], z[t]] = obs_inds[k]
+            # tot_seq[z[t]] += 1
+            # index_seq[tot_seq[z[t]], z[t]] = obs_inds[k]
 
         # for k in range(self.L):
         #     # assignment_info[k]['total_count'] = tot_seq[k]
@@ -289,7 +290,7 @@ class HDPVar:
         try:
             return np.sum(cdf[-1] * np.random.rand() > cdf)
         except Exception as e:
-            print('')
+            print(str(e))
 
     def sample_tables(self, seed=None):
         """
@@ -361,7 +362,7 @@ class HDPVar:
             sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
                                scale=self.sampling_parameters['S_0'] + 0, seed=seed).rvs()
             A = matrix_normal(mean=self.sampling_parameters['M'], rowcov=sigma,
-                              colcov=self.sampling_parameters['K']).rvs()
+                              colcov=inv(self.sampling_parameters['K'])).rvs()
             self.theta['A'][:, :, k] = A
             self.theta['sigma'][:, :, k] = sigma
 
@@ -376,14 +377,14 @@ class HDPVar:
             s_xx = S_xx[:, :, k] + self.sampling_parameters['K']
             s_yx = S_yx[:, :, k] + self.sampling_parameters['M'] @ self.sampling_parameters['K']
             s_yy = S_yy[:, :, k] + self.sampling_parameters['M'] @ (
-                        self.sampling_parameters['K'] @ self.sampling_parameters['M'].T)
+                    self.sampling_parameters['K'] @ self.sampling_parameters['M'].T)
             M = s_yx @ inv(s_xx)
             s_ygx = s_yy - M @ s_yx.T
             # enforce symmetry
             s_ygx = (s_ygx + s_ygx.T) / 2
             sigma = invwishart(df=self.sampling_parameters['n_0'] + self.state_counts['Ns'][k],
                                scale=self.sampling_parameters['S_0'] + s_ygx).rvs()
-            A = matrix_normal(mean=M, rowcov=sigma, colcov=s_xx).rvs()
+            A = matrix_normal(mean=M, rowcov=sigma, colcov=inv(s_xx)).rvs()
             self.theta['A'][:, :, k] = A
             self.theta['sigma'][:, :, k] = sigma
 

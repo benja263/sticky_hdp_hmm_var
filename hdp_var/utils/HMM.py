@@ -64,7 +64,7 @@ def forwards_messaging(size, log_likelihoods, pi_0, pi_z, normalizer=None):
                 accumulator = elnsum(accumulator, elnproduct(log_alpha[i, t], log_pi_z[i, j]))
             log_alpha[j, t + 1] = elnproduct(accumulator, log_likelihoods[j, t])
     normalizer += np.max(log_alpha, axis=0)
-    return log_alpha, normalizer
+    return log_alpha, np.sum(normalizer)
 
 
 def backwards_messaging(size, pi_z, log_likelihoods):

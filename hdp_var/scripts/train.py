@@ -17,8 +17,8 @@ data_path = '/Users/benjaminfuhrer/GitHub/hdp_var_python/data/'
 file_name = 'fes10.pkl'
 L = 20
 order = 2
-model_name = 'model_1'
-to_train = True
+model_name = 'model_3'
+to_train = False
 
 with open(f'{data_path}{file_name}', 'rb') as f:
     data = pickle.load(f)
@@ -38,10 +38,10 @@ while i <= 1:
     if to_train:
         model = HDPVar(D, L, order)
         tr = attr.asdict(TrainingParams(iterations=500, sample_every=10, burn_in=100, print_every=10))
-        #s_params = attr.asdict(SamplingParams(S_0=0.1*np.eye(D), b_gamma=0.01, b_alpha=0.01))
+        s_params = attr.asdict(SamplingParams(S_0=np.eye(D), b_gamma=0.001, b_alpha=0.001))
         model.set_training_parameters(tr)
         print(model.training_parameters)
-        #model.set_sampling_parameters(s_params)
+        model.set_sampling_parameters(s_params)
         print(model.sampling_parameters)
         model.train(train_data)
         with open(f'{data_path}{model_name}.pkl', 'wb') as f:
@@ -54,8 +54,7 @@ while i <= 1:
     pred_Y = model.predict_data(X_0=test_data['X'], reset_every=50)
     r2 = median_r_2(y=test_data['Y'], pred_y=pred_Y)
     r2_s.append(r2)
-    with open(f'{data_path}/model_{i}.pkl', 'wb') as f:
-        pickle.dump(model, f)
+
     print(r2)
     print('**********************************************************')
     i += 1
