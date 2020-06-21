@@ -51,7 +51,7 @@ while i <= 1:
             model = pickle.load(f)
 
     state_sequence = model.predict_state_sequence(test_data)
-    pred_Y = model.predict_data(X_0=test_data['X'], reset_every=50)
+    pred_Y = model.predict_data(X_0=test_data['X'], reset_every=100)
     r2 = median_r_2(y=test_data['Y'], pred_y=pred_Y)
     r2_s.append(r2)
 

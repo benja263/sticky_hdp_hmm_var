@@ -168,15 +168,20 @@ class HDPVar:
         """
         T = len(self.state_sequence)
         pred_Y = np.zeros((self.D, T))
-        for t in range(T - 1):
-            z = self.state_sequence[t]
-            if t < self.order or (reset_every is not None and t % reset_every == 0):
-                pred_Y[:, t] = self.theta['A'][:, :, z].dot(X_0[:, t])
+        z = self.state_sequence
+        A = self.theta['A']
+        t = 0
+        while t < T:
+            if t < self.order or (reset_every is not None and t % reset_every == 0) and T - t > reset_every:
+                for r in range(self.order):
+                    pred_Y[:, t+r] = A[:, :, z[t]] @ X_0[:, t+r]
+                t += self.order
             else:
                 X_pred = pred_Y[:, t - 1]
                 for r in range(2, self.order + 1):
                     X_pred = np.concatenate((X_pred, pred_Y[:, t - r]), axis=0)
-                pred_Y[:, t] = self.theta['A'][:, :, z] @ X_pred
+                pred_Y[:, t] = A[:, :, z[t]] @ X_pred
+                t += 1
         return pred_Y
 
     def sample_distributions(self, seed=None):
