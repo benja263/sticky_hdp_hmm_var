@@ -5,10 +5,10 @@ from collections import defaultdict
 
 import numpy as np
 from scipy.linalg import inv
-from scipy.stats import invwishart, matrix_normal, dirichlet
 from scipy.special import softmax
+from scipy.stats import invwishart, matrix_normal, dirichlet
 
-from hdp_var.utils.HMM import compute_likelihoods, backwards_messaging, viterbi, normalize, log_softmax, viterbi_path
+from hdp_var.utils.HMM import compute_likelihoods, backwards_messaging, viterbi_path, viterbi
 from hdp_var.utils.extended_math import ex_exp
 
 
@@ -27,25 +27,22 @@ class HDPVar:
 
     def __init__(self, D, L, order):
         """
-
+        State Count Parameter Explanation:
+        N - number of transitions - last row assigns 1 to z[0]
+        bar_m - number of tables that "considered" ordering dish k in restaurant j
+        m - number of tables that were "served" dish k in restaurant j
+        w - override variable for table t in restaurant j
+        Ns - count of each state in the state sequence z
         :param D:
         :param int L: number of markov states in the HMM = number of SLDS modes
         :param order:
         """
         self.distributions = dict()
         # model parameters
-        self.theta = {'A': np.ones((D, D * order, L)), 'sigma': np.ones((D, D, L))}
+        self.theta = {'A': np.ones((D, D * order, L)), 'inv_sigma': np.ones((D, D, L))}
 
         self.state_sequence = []
         # statistics of state occurrences
-        """
-        Parameter explanation:
-        N - number of transitions - last row assigns 1 to z[0]
-        bar_m - number of tables that "considered" ordering dish k in restaurant j 
-        m - number of tables that were "served" dish k in restaurant j
-        w - override variable for table t in restaurant j
-        Ns - count of each state in the state sequence z
-        """
         self.state_counts = {'N': np.zeros((L + 1, L)), 'bar_m': np.zeros((L, L)), 'm': np.zeros((L + 1, L)),
                              'w': np.zeros(L), 'Ns': np.zeros(L)}
         # maximum number of states
@@ -119,7 +116,7 @@ class HDPVar:
         self.sample_distributions(seed)
         self.sample_init_theta(seed)
         for iteration in iterations:
-            self.state_sequence, sequence_log_likelihood = self.sample_state_sequence(data, seed)
+            self.state_sequence, sequence_log_likelihood = self.sample_state_sequence(data)
             self.sample_tables(seed)
             self.sample_distributions(seed)
             self.sample_theta(self.calculate_statistics(data))
@@ -129,7 +126,7 @@ class HDPVar:
                 self.sequence_log_likelihoods.append(sequence_log_likelihood)
                 self.param_tracking['state_sequence'].append(self.state_sequence)
                 self.param_tracking['A'].append(self.theta['A'])
-                self.param_tracking['sigma'].append(self.theta['sigma'])
+                self.param_tracking['inv_sigma'].append(self.theta['inv_sigma'])
                 self.param_tracking['iteration'].append(iteration)
                 self.param_tracking['gamma'].append(self.concentration_parameters['gamma'])
                 self.param_tracking['alpha_p_kappa'].append(self.concentration_parameters['alpha_p_kappa'])
@@ -141,7 +138,6 @@ class HDPVar:
                 print(f"Iteration: {iteration}/{self.training_parameters['iterations']}")
                 print(f'Sequence log-likelihood: {sequence_log_likelihood}')
             self.iteration = iteration
-
         print(f'Training has stopped at iteration: {self.iteration}')
 
     def predict_state_sequence(self, data):
@@ -153,11 +149,11 @@ class HDPVar:
         params = self.get_best_iteration()
         log_likelihoods, _ = compute_likelihoods(self.L, data, self.theta, self.distributions['pi_0'],
                                                  self.distributions['pi_z'])
-        # self.state_sequence = viterbi(self.L, data, theta={'A': params['A'], 'sigma': params['sigma']},
-        #                               pi_0=params['pi_0'], pi_z=params['pi_z'])
-        self.state_sequence = viterbi_path(prior=self.distributions['pi_0'], transmat=self.distributions['pi_z'],
-                                           obslik=ex_exp(log_likelihoods - np.max(log_likelihoods, axis=0)))
-        self.theta['A'], self.theta['sigma'] = params['A'], params['sigma']
+        self.state_sequence = viterbi(self.L, data, theta={'A': params['A'], 'inv_sigma': params['inv_sigma']},
+                                      pi_0=params['pi_0'], pi_z=params['pi_z'])
+        # self.state_sequence = viterbi_path(prior=self.distributions['pi_0'], transmat=self.distributions['pi_z'],
+        #                                    obslik=ex_exp(log_likelihoods - np.max(log_likelihoods, axis=0)))
+        self.theta['A'], self.theta['inv_sigma'] = params['A'], params['inv_sigma']
         return self.state_sequence
 
     def predict_data(self, X_0, reset_every=None):
@@ -167,10 +163,8 @@ class HDPVar:
         :return:
         """
         T = len(self.state_sequence)
-        pred_Y = np.zeros((self.D, T))
-        z = self.state_sequence
-        A = self.theta['A']
-        t = 0
+        pred_Y, z = np.zeros((self.D, T)), self.state_sequence
+        A, t = self.theta['A'], 0
         while t < T:
             if t < self.order or (reset_every is not None and t % reset_every == 0) and T - t > reset_every:
                 for r in range(self.order):
@@ -193,7 +187,6 @@ class HDPVar:
         # sample state, initial state and state transition probabilities
         kappa = self.concentration_parameters['alpha_p_kappa'] * self.concentration_parameters['rho']
         alpha = self.concentration_parameters['alpha_p_kappa'] - kappa
-        rng = np.random.default_rng(seed=seed)
         # vector beta
         beta = dirichlet(
             np.sum(self.state_counts['bar_m'], axis=0) + self.concentration_parameters['gamma'] / self.L).rvs(
@@ -204,21 +197,18 @@ class HDPVar:
             # kronecker's alpha_p_kappa construction
             kron_apk = np.zeros(beta.shape)
             kron_apk[k] = 1
-            # try:
             pi_z[k] = dirichlet((alpha * beta + self.state_counts['N'][k] + kappa * kron_apk).flatten()).rvs(
                 random_state=seed).flatten()
-            # except:
-            #     pi_z[k] = rng.dirichlet(alpha * beta + self.state_counts['N'][k] + kappa * kron_apk + SMOOTHING_CONSTANT)
         # initial probabilities
         pi_0 = dirichlet(alpha * beta + self.state_counts['N'][self.L]).rvs(random_state=seed)
         self.distributions['pi_z'] = pi_z
         self.distributions['pi_0'] = pi_0
         self.distributions['beta'] = beta
 
-    def sample_state_sequence(self, data, seed=None):
+    def sample_state_sequence(self, data):
         """
 
-        :param seed:
+        :param data:
         :return:
         """
         pi_0, pi_z = self.distributions['pi_0'], self.distributions['pi_z']
@@ -227,58 +217,29 @@ class HDPVar:
                                                                        self.distributions['pi_z'])
         # number of observations
         T = np.shape(data['Y'])[1]
-        block_size = data['block_size']
-        block_end = data['block_end']
-
         log_messages = backwards_messaging(size=(self.L, T),
                                            pi_z=pi_z,
                                            log_likelihoods=log_likelihoods)
-        back_msg = ex_exp(log_messages - np.max(log_messages, axis=0))
-        back_msg = softmax(back_msg, axis=0)
+        back_msg = softmax(ex_exp(log_messages - np.max(log_messages, axis=0)), axis=0)
         z = np.zeros(T, dtype=int)
         # forward run
         # pre-allocate indices
-        # assignment_info = [{'indices': np.zeros(T, dtype=int), 'total_count': 0} for k in range(self.L)]
-        # tot_seq = np.zeros(self.L, dtype=int)
-        # index_seq = np.zeros((T, self.L), dtype=int)
         Ns = np.zeros(self.state_counts['Ns'].shape, dtype=int)
         # transition probabilities
         N = np.zeros(self.state_counts['N'].shape, dtype=int)
-
-        # log_pi_0, log_pi_z = np.full(fill_value=np.finfo(float).min,
-        #                              shape=pi_0.shape), np.full(fill_value=np.finfo(float).min, shape=pi_z.shape)
-        # np.log(pi_0, where=pi_0 > 0.0, out=log_pi_0), np.log(pi_z, where=pi_z > 0.0, out=log_pi_z)
         # initialize
         f = softmax(pi_0 * back_msg[:, 0])
-        # obs_inds = np.arange(block_end[0])
         # sampling from cdf
         z[0] = self.sample_state(f)
         # update state count
         N[-1, z[0]] += 1
-        # count for block size
-        # for k in range(block_size[0]):
         Ns[z[0]] += 1
-        # tot_seq[z[0]] += 1
-        # index_seq[tot_seq[z[0]], z[0]] = obs_inds[k]
-
         for t in range(1, T):
             f = softmax(pi_z[z[t - 1]] * back_msg[:, t])
-            # obs_inds = np.arange(block_end[t-1], block_end[t]+1)
             z[t] = self.sample_state(f)
             # update counts
             N[z[t - 1], z[t]] += 1
-
-            # count for block size
-            # for k in range(block_size[t]):
             Ns[z[t]] += 1
-            # tot_seq[z[t]] += 1
-            # index_seq[tot_seq[z[t]], z[t]] = obs_inds[k]
-
-        # for k in range(self.L):
-        #     # assignment_info[k]['total_count'] = tot_seq[k]
-        #     assignment_info[k]['total_count'] =
-        #     # assignment_info[k]['indices'] = index_seq[:, k]
-
         self.state_counts['Ns'] = Ns
         self.state_counts['N'] = N
         return z, sequence_log_likelihood
@@ -292,10 +253,7 @@ class HDPVar:
         :return:
         """
         cdf = np.cumsum(pi_z_t)
-        try:
-            return np.sum(cdf[-1] * np.random.rand() > cdf)
-        except Exception as e:
-            print(str(e))
+        return np.sum(cdf[-1] * np.random.rand() > cdf)
 
     def sample_tables(self, seed=None):
         """
@@ -328,8 +286,7 @@ class HDPVar:
         """
         bar_m = self.state_counts['m'].copy()
         rho = self.concentration_parameters['rho']
-        p = 0.0
-        w = np.zeros(self.state_counts['w'].shape)
+        p, w = 0.0, np.zeros(self.state_counts['w'].shape)
         for i in range(bar_m.shape[1]):
             if rho > 0.0:
                 p = rho / (self.distributions['beta'][i] * (1 - rho) + rho)
@@ -369,7 +326,7 @@ class HDPVar:
             A = matrix_normal(mean=self.sampling_parameters['M'], rowcov=sigma,
                               colcov=inv(self.sampling_parameters['K'])).rvs()
             self.theta['A'][:, :, k] = A
-            self.theta['sigma'][:, :, k] = sigma
+            self.theta['inv_sigma'][:, :, k] = sigma
 
     def sample_theta(self, data_statistics):
         """
@@ -391,7 +348,7 @@ class HDPVar:
                                scale=self.sampling_parameters['S_0'] + s_ygx).rvs()
             A = matrix_normal(mean=M, rowcov=sigma, colcov=inv(s_xx)).rvs()
             self.theta['A'][:, :, k] = A
-            self.theta['sigma'][:, :, k] = sigma
+            self.theta['inv_sigma'][:, :, k] = inv(sigma)
 
     def sample_hyperparameters(self, seed=None):
         """
@@ -459,12 +416,10 @@ class HDPVar:
             beta_aux = np.zeros(A.shape)
             for j in range(beta_aux.shape[1]):
                 beta_aux[:, j] = dirichlet(A[:, j]).rvs(random_state=seed)
-            beta_aux = beta_aux[0]
             # binomial auxilary variables
             binom_aux = np.random.rand(restaurant_count) * (conc_param + table_customer_count) < table_customer_count
             # gamma resampling of concentration parameter
-            gamma_a = a + total_table_count - np.sum(binom_aux)
-            gamma_b = b - np.sum(np.log(beta_aux))
+            gamma_a, gamma_b = a + total_table_count - np.sum(binom_aux), b - np.sum(np.log(beta_aux[0]))
             conc_param = rng.gamma(gamma_a) / gamma_b
         return conc_param
 
@@ -473,7 +428,7 @@ class HDPVar:
 
         :return:
         """
-        argmax = np.argmax(self.sequence_log_likelihoods)
+        argmax = int(np.argmax(self.sequence_log_likelihoods))
         params = {}
         for key in self.param_tracking.keys():
             params[key] = self.param_tracking[key][argmax]

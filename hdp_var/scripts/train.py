@@ -11,13 +11,12 @@ from hdp_var.model.hdp_var import HDPVar
 from hdp_var.parameters import TrainingParams, SamplingParams
 from hdp_var.utils.data_preparation import generate_data_structure
 from hdp_var.utils.stats import median_r_2
-from hdp_var.utils.plot import plot, plot_1, plot_likelihood
 
 data_path = '/Users/benjaminfuhrer/GitHub/hdp_var_python/data/'
 file_name = 'fes10.pkl'
 L = 20
 order = 2
-model_name = 'model_3'
+model_name = 'model_1'
 to_train = False
 
 with open(f'{data_path}{file_name}', 'rb') as f:
@@ -49,17 +48,17 @@ while i <= 1:
     else:
         with open(f'{data_path}{model_name}.pkl', 'rb') as f:
             model = pickle.load(f)
-
+    model.theta['inv_sigma'] = model.theta['sigma']
+    model.param_tracking['inv_sigma'] = model.param_tracking['sigma']
+    with open(f'{data_path}{model_name}.pkl', 'wb') as f:
+        pickle.dump(model, f)
     state_sequence = model.predict_state_sequence(test_data)
-    pred_Y = model.predict_data(X_0=test_data['X'], reset_every=100)
+    pred_Y = model.predict_data(X_0=test_data['X'], reset_every=82)
     r2 = median_r_2(y=test_data['Y'], pred_y=pred_Y)
     r2_s.append(r2)
 
     print(r2)
     print('**********************************************************')
     i += 1
-    # plot_likelihood(model)
-    # plot(test_data['Y'][0], pred_Y[0])
-    # plot_1(test_data['Y'][0])
 print(r2_s)
 print('')

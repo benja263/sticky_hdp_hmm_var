@@ -1,11 +1,9 @@
 """
 Module containing HMM related functions
 """
-import numpy as np
 from scipy.linalg import cholesky, inv
+
 from hdp_var.utils.extended_math import *
-from scipy.special import logsumexp
-from scipy.stats import multivariate_normal
 
 
 def compute_likelihoods(L, data, theta, pi_0, pi_z):
@@ -22,7 +20,7 @@ def compute_likelihoods(L, data, theta, pi_0, pi_z):
     D, T = np.shape(data['Y'])
     log_likelihoods = np.zeros((L, T))
     for k in range(L):
-        inv_sigma = cholesky(inv(theta['sigma'][:, :, k]))
+        inv_sigma = cholesky(theta['inv_sigma'][:, :, k])
         mu = inv_sigma @ (data['Y'] - theta['A'][:, :, k] @ data['X'])
         log_likelihoods[k, :] = -0.5 * np.sum(mu ** 2, axis=0) + np.sum(np.log(np.diag(inv_sigma)))
 
@@ -76,12 +74,8 @@ def backwards_messaging(size, pi_z, log_likelihoods):
     :return:
     """
     L, T = size
-    # log_pi_z = np.full(fill_value=np.finfo(float).min, shape=pi_z.shape)
-    # np.log(pi_z, where=pi_z > 0.0, out=log_pi_z)
     log_pi_z = ex_log(pi_z)
-    log_beta = np.zeros(size)
     ex_ln_beta = np.zeros(size)
-    beta = np.zeros(size)
     for t in reversed(range(T - 1)):
         # log_beta = np.full(fill_value=np.nan, shape=L)
         for i in range(L):
@@ -90,17 +84,6 @@ def backwards_messaging(size, pi_z, log_likelihoods):
             for j in range(L):
                 log_beta = elnsum(log_beta, res[j])
             ex_ln_beta[i, t] = log_beta
-    # ex_ln_beta2 = np.zeros(size)
-    # for t in reversed(range(T - 1)):
-    #     partial_likelihood = ex_log_product(log_likelihoods[:, t + 1], ex_ln_beta2[:, t + 1])
-    #     for i in range(L):
-    #         log_beta = np.full(fill_value=np.nan, shape=L)
-    #         res = ex_log_product(log_pi_z[i, :], partial_likelihood)
-    #         for j in range(L):
-    #             log_beta = ex_log_sum(log_beta, res)
-    #     ex_ln_beta2[i, t] = log_beta
-        # log_beta[:, t] = log_sum_exp_1d(log_beta[:, t+1] + log_likelihoods[:, t+1] + log_pi_z)
-        # beta[:, t] = log_softmax(log_beta[:, t])[0]
     return ex_ln_beta
 
 
@@ -194,50 +177,3 @@ def viterbi_path(prior, transmat, obslik, scaled=True, ret_loglik=False):
             p = trellis_prob[path[-1], -1]
             loglik = np.log(p)
         return path, loglik
-
-
-def log_sum_exp(x):
-    """
-
-    :param x:
-    :return:
-    """
-    b = np.max(x, axis=1)
-    sum_exp = np.sum(np.exp(x - b), axis=1)
-    log_s_e = np.full(fill_value=np.finfo(float).min, shape=sum_exp.shape)
-    np.log(sum_exp, where=(np.invert(np.isneginf(sum_exp))) & (sum_exp != 0.0), out=log_s_e)
-    return b + log_s_e
-
-
-def log_sum_exp_1d(x):
-    """
-
-    :param x:
-    :return:
-    """
-    b = np.max(x)
-    return b + np.log(np.sum(np.exp(x - b)))
-
-
-def normalize(x):
-    """
-
-    :param x:
-    :return:
-    """
-    return x / np.sum(x)
-
-
-def log_softmax(x):
-    """
-
-    :param x:
-    :return:
-    """
-    scale = log_sum_exp_1d(x)
-    return x - scale, scale
-
-
-def softmax(x):
-    scale = np.sum(np.exp(x))
-    return np.exp(x) / scale, scale
