@@ -1,7 +1,7 @@
 """
 Module containing HMM related functions
 """
-from scipy.linalg import cholesky, inv
+from scipy.linalg import cholesky
 
 from hdp_var.utils.extended_math import *
 
@@ -47,7 +47,6 @@ def forwards_messaging(size, log_likelihoods, pi_0, pi_z, normalizer=None):
     log_pi_z, log_pi_0 = ex_log(pi_z), ex_log(pi_0)
 
     log_alpha = np.zeros(size)
-
     log_alpha[:, 0] = ex_log_product(log_pi_0, log_likelihoods[:, 0])
 
     if normalizer is None:
@@ -67,7 +66,7 @@ def forwards_messaging(size, log_likelihoods, pi_0, pi_z, normalizer=None):
 
 def backwards_messaging(size, pi_z, log_likelihoods):
     """
-    Run a backwards pass and return the partial marginal likelihoods
+    Run a backwards pass and return the backwards messages
     :param size:
     :param pi_z:
     :param log_likelihoods:
@@ -77,7 +76,6 @@ def backwards_messaging(size, pi_z, log_likelihoods):
     log_pi_z = ex_log(pi_z)
     ex_ln_beta = np.zeros(size)
     for t in reversed(range(T - 1)):
-        # log_beta = np.full(fill_value=np.nan, shape=L)
         for i in range(L):
             log_beta = np.nan
             res = ex_log_product(log_pi_z[i, :], ex_log_product(log_likelihoods[:, t + 1], ex_ln_beta[:, t + 1]))
@@ -105,7 +103,6 @@ def viterbi(L, data, theta, pi_0, pi_z):
 
     for t in range(1, T):
         for j in range(L):
-            # todo invented partial marg name - need to see what it means
             partial_marg = delta[:, t - 1] * pi_z[:, j]
             delta[j, t], psi[j, t] = np.max(partial_marg) * likelihoods[j, t], np.argmax(partial_marg)
         normalizer[t] = np.sum(delta[:, t])

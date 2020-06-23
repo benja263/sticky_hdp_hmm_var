@@ -36,10 +36,10 @@ class TestModel(unittest.TestCase):
         self.assertEqual(model.training_parameters['save_every'], 100, msg='save_every != default value')
         self.assertEqual(model.training_parameters['print_every'], 100, msg='print_every != default value')
         self.assertEqual(model.training_parameters['burn_in'], 100, msg='burn_in != default value')
-        self.assertEqual(model.concentration_parameters['gamma'], 1 / 0.001, msg='gamma != default value')
-        self.assertEqual(model.concentration_parameters['alpha_p_kappa'], 1 / 0.001,
+        self.assertEqual(model.DP_parameters['gamma'], 1 / 0.001, msg='gamma != default value')
+        self.assertEqual(model.DP_parameters['alpha_p_kappa'], 1 / 0.001,
                          msg='alpha_p_kappa != default value')
-        self.assertEqual(model.concentration_parameters['rho'], 100 / 101, msg='rho != default value')
+        self.assertEqual(model.DP_parameters['rho'], 100 / 101, msg='rho != default value')
 
         try:
             np.testing.assert_array_equal(model.sampling_parameters['K'],
@@ -112,9 +112,9 @@ class TestModel(unittest.TestCase):
                          msg='print_every != set value')
         self.assertEqual(model.training_parameters['burn_in'], training_params['burn_in'],
                          msg='burn_in != set value')
-        self.assertEqual(model.concentration_parameters['gamma'], 1, msg='gamma != set value')
-        self.assertEqual(model.concentration_parameters['alpha_p_kappa'], 1, msg='alpha_p_kappa != set value')
-        self.assertEqual(model.concentration_parameters['rho'], 0.5, msg='rho != set value')
+        self.assertEqual(model.DP_parameters['gamma'], 1, msg='gamma != set value')
+        self.assertEqual(model.DP_parameters['alpha_p_kappa'], 1, msg='alpha_p_kappa != set value')
+        self.assertEqual(model.DP_parameters['rho'], 0.5, msg='rho != set value')
 
     def test_distributions(self):
         """
