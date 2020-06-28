@@ -38,36 +38,3 @@ def generate_data_structure(Y, order):
     data['block_size'] = np.ones(data['Y'].shape[1], dtype=int)
     data['block_end'] = np.cumsum(data['block_size'])
     return data
-
-
-# def prepare_mock_data(T, D, L, order):
-#     """
-#
-#     :param D:
-#     :param L:
-#     :param order:
-#     :return:
-#     """
-#     Y = np.zeros((D, T))
-#     Y[:, :order] = np.ones((D, order))
-#     A = np.zeros((D, D*order, L))
-#     n = int(T / L)
-#     state_sequence = np.zeros(T)
-#     z = 0
-#     for i in range(L):
-#         temp = (i+1)*np.eye(D)
-#         for r in range(1, order):
-#             temp = np.concatenate((temp, ((i+1)/10)*np.eye(D)), axis=1)
-#         if i % 2 == 0:
-#             temp = -temp
-#         A[:, :, i] = temp
-#     for t in range(order, T - 1):
-#         X_pred = Y[:, t - 1]
-#         for r in range(2, order + 1):
-#             X_pred = np.concatenate((X_pred, Y[:, t - r]), axis=0)
-#         Y[:, t] = A[:, :, z].dot(X_pred)
-#         state_sequence[t] = z
-#         if t % n == 0:
-#             z += 1
-#     return Y, state_sequence, A
-
