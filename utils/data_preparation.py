@@ -6,6 +6,21 @@ covariance Sigma
 import numpy as np
 
 
+def generate_data_structure(Y, order):
+    """
+    Return a dictionary as a data structure containing the input observations (Y) in a format suited for
+     training the HDP-VAR model
+    :param np.array Y: DxT time-series observation matrix where D is the number of dimensions and T is the number of time points
+    :param int order: VAR order 'r'
+    :return:
+    """
+    X, valid = make_design_matrix(Y, order)
+    data = {'Y': Y[:, valid], 'X': X[:, valid]}
+    data['block_size'] = np.ones(data['Y'].shape[1], dtype=int)
+    data['block_end'] = np.cumsum(data['block_size'])
+    return data
+
+
 def make_design_matrix(Y, order):
     """
     Generate matrix X such that X[t] = Y[t:t-order]
@@ -25,16 +40,4 @@ def make_design_matrix(Y, order):
     return X, valid_indices
 
 
-def generate_data_structure(Y, order):
-    """
-    Return a dictionary as a data structure containing the input observations (Y) in a format suited for
-     training the HDP-VAR model
-    :param np.array Y: DxT time-series observation matrix where D is the number of dimensions and T is the number of time points
-    :param int order:
-    :return:
-    """
-    X, valid = make_design_matrix(Y, order)
-    data = {'Y': Y[:, valid], 'X': X[:, valid]}
-    data['block_size'] = np.ones(data['Y'].shape[1], dtype=int)
-    data['block_end'] = np.cumsum(data['block_size'])
-    return data
+

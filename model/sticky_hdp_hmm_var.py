@@ -377,7 +377,7 @@ class sticky_hdp_hmm_var:
         X_0 every x number of time points.
         Note - first predict state sequence prior to predicting observations.
         :param X_0: represents the ground truth past observations such that X_0[:, 0] = the prior observations that
-        generated Y[:, 0]
+        generated Y[:, 0] (created via generate_data_structure method in data_preparation.py).
         :param int reset_every: Reset every x time points
         :return: DXT np.ndarray where D = number of dimensions and T = number of time points
         """
