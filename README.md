@@ -11,7 +11,7 @@ A Hierarchical Dirichlet Process (HDP) is used as a prior for the HMM parameters
 The sticky part increases the prior self-transition probability of a state.  
 
 The VAR equation is given by:  
-![VAR_equation](images/var_equation.png?raw=true "Equation")
+![VAR_equation](images/var_equation.png?raw=true "Equation")  
 where z(t) is the HMM-state/SLDS-mode at time t and r is the model order.
 
 ### Setup
