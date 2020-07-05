@@ -40,7 +40,7 @@ The notebook currently contains an example of observations generated via 2 sine-
 Comparing the A-matrices of the sine-waves (ground truth) and the A-matrices of the model trained on these waves 
 results in nearly identical values
 ![A_matrices](images/a_matrices.png)
-Generating observations using the A-matrices of the trained model vs the ground truth makes it very difficult to observe any differences 
+Generating observations using the A-matrices of the trained model vs the ground truth makes it very difficult to observe the differences. 
 
 ![sine_wave](images/sine_wave.png)
 
