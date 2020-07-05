@@ -33,10 +33,15 @@ A trained model can predict a state-sequence to best fit a given data using the 
 The method `predict_observations` can be used to generate observations from a given starting point.
 
 ### Notebook Example
+As the model is unsupervised the idea is to overfit it on a known example to see if one can 'trust' the model.
 As a sanity check one can construct observations from a state-space representation of different sine-waves
 in the notebook `sine_wave.ipynb` and train the model on it.
 The notebook currently contains an example of observations generated via 2 sine-waves that inter-switch 3 times.
-Training a model on these observations generated the following predicted vs observations plot.  
+Comparing the A-matrices of the sine-waves (ground truth) and the A-matrices of the model trained on these waves 
+results in nearly identical values
+![A_matrices](images/a_matrices.png)
+Generating observations using the A-matrices of the trained model vs the ground truth makes it very difficult to observe any differences 
+
 ![sine_wave](images/sine_wave.png)
 
 
