@@ -23,7 +23,7 @@ def generate_data_structure(Y, order):
 
 def make_design_matrix(Y, order):
     """
-    Generate matrix X such that X[t] = Y[t:t-order]
+    Generate matrix X such that X[t] = Y[t-1:t-order]
     Every column in X corresponds to the previous r observations (r = order) and Y equals the current observation
     :param np.array Y: DxT time-series observation matrix where D is the number of dimensions and T is the number of time points
     :param int order:

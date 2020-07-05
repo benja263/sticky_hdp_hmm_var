@@ -8,7 +8,7 @@ from scipy.linalg import inv
 from scipy.stats import invwishart, matrix_normal
 
 from utils.HMM import compute_likelihoods, backwards_messaging, viterbi
-from utils.math.c_extensions import load_c_lib, rand_gamma, rand_dirichlet
+from utils.math.c_extensions import load_c_lib, rand_gamma, rand_dirichlet, e_array_log
 
 
 class sticky_hdp_hmm_var:
@@ -106,7 +106,8 @@ class sticky_hdp_hmm_var:
             self.sample_theta(self.calculate_statistics(data))
             self.sample_hyperparameters(seed)
 
-            if iteration >= self.training_parameters['burn_in'] and iteration % self.training_parameters['sample_every'] == 0:
+            if iteration >= self.training_parameters['burn_in'] and iteration % self.training_parameters[
+                'sample_every'] == 0:
                 self.sequence_log_likelihoods.append(sequence_log_likelihood)
                 self.param_tracking['state_sequence'].append(self.state_sequence)
                 self.param_tracking['A'].append(self.theta['A'])
@@ -161,17 +162,16 @@ class sticky_hdp_hmm_var:
             self.theta['inv_sigma'][:, :, k] = inv(sigma)
 
     def sample_state_sequence(self, data):
-        pi_0, pi_z = self.distributions['pi_0'], self.distributions['pi_z']
-        likelihoods, log_likelihoods, sequence_log_likelihood = compute_likelihoods(self.L, data,
-                                                                                                  self.theta,
-                                                                                                  self.distributions[
-                                                                                                      'pi_0'],
-                                                                                                  self.distributions[
-                                                                                                      'pi_z'],
-                                                                                                  self.c_lib)
+        pi_0, pi_z, c_lib = self.distributions['pi_0'], self.distributions['pi_z'], self.c_lib
+        log_pi_0, log_pi_z = e_array_log(pi_0, c_lib), e_array_log(pi_z, c_lib)
+        likelihoods, log_likelihoods, sequence_log_likelihood = compute_likelihoods(self.L, data, self.theta,
+                                                                                    log_pi_0,
+                                                                                    log_pi_z,
+                                                                                    c_lib)
         # number of observations
         T = np.shape(data['Y'])[1]
-        back_msg = backwards_messaging(size=(self.L, T), pi_z=pi_z, log_likelihoods=log_likelihoods, c_lib=self.c_lib)
+        back_msg = backwards_messaging(size=(self.L, T), log_pi_z=log_pi_z, log_likelihoods=log_likelihoods,
+                                       c_lib=c_lib)
         z = np.zeros(T, dtype=int)
         # forward run
         # pre-allocate indices
@@ -365,8 +365,10 @@ class sticky_hdp_hmm_var:
         :return:
         """
         params = self.get_best_iteration()
-        self.state_sequence = viterbi(self.L, data, theta={'A': params['A'], 'inv_sigma': params['inv_sigma']},
-                                      pi_0=params['pi_0'], pi_z=params['pi_z'], c_lib=self.c_lib or load_c_lib())
+        c_lib = self.c_lib or load_c_lib()
+        log_pi_z, log_pi_0 = e_array_log(params['pi_z'], c_lib), e_array_log(params['pi_0'], c_lib)
+        likelihoods, _, _ = compute_likelihoods(self.L, data, self.theta, log_pi_0, log_pi_z, c_lib)
+        self.state_sequence = viterbi(self.L, params['pi_0'], params['pi_z'], likelihoods)
         self.theta['A'], self.theta['inv_sigma'] = params['A'], params['inv_sigma']
         return self.state_sequence
 
