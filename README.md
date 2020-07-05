@@ -1,18 +1,18 @@
 # sticky-HDP-HMM-Vector Autoregression
 A python implementation of the sticky-HDP-HMM-VAR model[1].  
-For HMM stability[2] + speeding up the model some functions were implemented in C++.
+For a fast implementation of stable HMM algorithms[2] some functions were implemented in C++.
 
 ## The algorithm in a nutshell
 The sticky-HDP-HMM-VAR is an unsupervised machine learning algorithm used to model dynamical phenomena by switching between linear dynamical systems (SLDS). 
 Each different linear dynamical system is called an SLDS mode.  
 Vector Autoregression is a special SLDS case in which each observation is modeled as a linear function of the previous observations.   
-The switching is governed via a Hidden Markov Model (HMM) such that each SLDS mode corresponds to an HMM state.   
-A Hierarchical Dirichlet Process (HDP) is used as a prior for the HMM parameters. This implementation uses the L-weak limit approximation to the DP[3] such that one needs to pre-specify the maximum number of states such that the number, L, exceeds the total number of expected HMM states. 
-The sticky part increases the prior self-transition probability of a state.  
+The switching between SLDS modes is governed via a Hidden Markov Model (HMM) such that each SLDS mode corresponds to an HMM state.   
+A Hierarchical Dirichlet Process (HDP) is used as a prior for the HMM parameters. This implementation uses the L-weak limit approximation to the DP[3] such that one needs to pre-specify the maximum number of states, L, as long as L exceeds the total number of expected HMM states. 
+The sticky part introduces a bias for the self-transition probability of a state.  
 
 The VAR equation is given by:  
 ![VAR_equation](images/var_equation.png?raw=true "Equation")  
-where z(t) is the HMM-state/SLDS-mode at time t and r is the model order.
+where z(t) is the HMM-state/SLDS-mode at time t and r is the VAR order.
 
 ### Setup
 As part of the code is run in c++ one needs to compile the c++ part.  
@@ -33,7 +33,7 @@ A trained model can predict a state-sequence to best fit a given data using the 
 The method `predict_observations` can be used to generate observations from a given starting point.
 
 ### Notebook Example
-As the model is unsupervised the idea is to overfit it on a known example to see if one can 'trust' the model.
+As the model is unsupervised the notebook's idea is to overfit it on a known example to see if one can 'trust' the model.
 As a sanity check one can construct observations from a state-space representation of different sine-waves
 in the notebook `sine_wave.ipynb` and train the model on it.
 The notebook currently contains an example of observations generated via 2 sine-waves that inter-switch 3 times.
