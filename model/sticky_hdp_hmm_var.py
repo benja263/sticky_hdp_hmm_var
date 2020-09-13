@@ -11,7 +11,7 @@ from utils.HMM import compute_likelihoods, backwards_messaging, viterbi
 from utils.math.c_extensions import load_c_lib, rand_gamma, rand_dirichlet, e_array_log
 
 
-class sticky_hdp_hmm_var:
+class StickyHdpHmmVar:
     """
     sticky-HDP-HMM-SLDS model Only using the sticky-VAR and MNIW priors part
     This code uses the L - weak approximation to the DP
