@@ -4,6 +4,7 @@ Module containing HMM related functions
 import numpy as np
 from scipy.linalg import cholesky
 
+from utils.helpers import normalize_vec
 from utils.math.c_extensions import forwards_pass, backwards_pass, e_array_exp
 
 
@@ -65,9 +66,7 @@ def viterbi(L, pi_0, pi_z, likelihoods):
     state_sequence = np.zeros(T, dtype=int)
     normalizer = np.ones(T)
 
-    delta[:, 0] = pi_0 * likelihoods[:, 0]
-    normalizer[0] = np.sum(delta[:, 0])
-    delta[:, 0] /= normalizer[0]
+    delta[:, 0], normalizer[0] = normalize_vec(pi_0 * likelihoods[:, 0])
 
     for t in range(1, T):
         for j in range(L):

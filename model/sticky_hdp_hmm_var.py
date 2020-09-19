@@ -8,6 +8,7 @@ from scipy.linalg import inv
 from scipy.stats import invwishart, matrix_normal
 
 from utils.HMM import compute_likelihoods, backwards_messaging, viterbi
+from utils.helpers import normalize_vec
 from utils.math.c_extensions import load_c_lib, rand_gamma, rand_dirichlet, e_array_log
 
 
@@ -106,8 +107,7 @@ class StickyHdpHmmVar:
             self.sample_theta(self.calculate_statistics(data))
             self.sample_hyperparameters(seed)
 
-            if iteration >= self.training_parameters['burn_in'] and iteration % self.training_parameters[
-                'sample_every'] == 0:
+            if iteration >= self.training_parameters['burn_in'] and iteration % self.training_parameters['sample_every'] == 0:
                 self.sequence_log_likelihoods.append(sequence_log_likelihood)
                 self.param_tracking['state_sequence'].append(self.state_sequence)
                 self.param_tracking['A'].append(self.theta['A'])
@@ -161,7 +161,7 @@ class StickyHdpHmmVar:
             self.theta['A'][:, :, k] = A
             self.theta['inv_sigma'][:, :, k] = inv(sigma)
 
-    def sample_state_sequence(self, data):
+    def  sample_state_sequence(self, data):
         pi_0, pi_z, c_lib = self.distributions['pi_0'], self.distributions['pi_z'], self.c_lib
         log_pi_0, log_pi_z = e_array_log(pi_0, c_lib), e_array_log(pi_z, c_lib)
         likelihoods, log_likelihoods, sequence_log_likelihood = compute_likelihoods(self.L, data, self.theta,
@@ -178,10 +178,8 @@ class StickyHdpHmmVar:
         Ns = np.zeros(self.state_counts['Ns'].shape, dtype=int)
         # transition probabilities
         N = np.zeros(self.state_counts['N'].shape, dtype=int)
-        # initialize
-        f = likelihoods[:, 0] * back_msg[:, 0]
-        # normalize density
-        f /= np.sum(f)
+        # initialize & normalize density
+        f, _ = normalize_vec(likelihoods[:, 0] * back_msg[:, 0])
         state_likelihood = pi_0 * f
         # sampling from cdf
         z[0] = self.sample_state(state_likelihood / np.sum(state_likelihood))
@@ -189,8 +187,7 @@ class StickyHdpHmmVar:
         N[-1, z[0]] += 1
         Ns[z[0]] += 1
         for t in range(1, T):
-            f = likelihoods[:, t] * back_msg[:, t]
-            f /= np.sum(f)
+            f, _ = normalize_vec(likelihoods[:, t] * back_msg[:, t])
             state_likelihood = pi_z[z[t - 1]] * f
             z[t] = self.sample_state(state_likelihood / np.sum(state_likelihood))
             # update counts
@@ -224,13 +221,15 @@ class StickyHdpHmmVar:
 
         m = np.zeros(self.state_counts['N'].shape, dtype=int).ravel()
         a_beta = alpha * self.distributions['beta']
-        # sample M where M[i,j] = # of tables in restaurant i that served dish j
+        # sample m where m[i,j] = # of tables in restaurant i that served dish j
         vec = a_beta * np.ones(self.L) + kappa * np.eye(self.L)
         vec = np.concatenate((vec, a_beta[:, np.newaxis].transpose()))
         N = self.state_counts['N'].ravel()
         for ind, element in enumerate(vec.ravel()):
-            m[ind] = 1 + np.sum(np.random.rand(1, N[ind]) < np.divide(np.ones(N[ind]) * element,
-                                                                      element + np.arange(N[ind])))
+            # element = alpha*beta_k + kappa*lambda(i,j)
+            # m is the sum of ones  sampled from a Bernoulli distribution with probability = (element / n + element)
+            # where n is incremented sequentially from 0 to number of customers in restaurant i eating dish j
+            m[ind] = np.sum(np.random.rand(1, N[ind]) < np.divide(np.ones(N[ind]) * element, element + np.arange(N[ind])))
         m[N == 0.0] = 0.0
         self.state_counts['m'] = m.reshape(self.state_counts['m'].shape)
         self.sample_bar_m()
