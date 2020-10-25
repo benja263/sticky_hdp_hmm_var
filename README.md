@@ -8,7 +8,7 @@ Each different linear dynamical mode is called an SLDS mode.
 Vector Autoregression is a special SLDS case in which each observation is modeled as a linear function of the previous observations.   
 A Hidden Markov Model (HMM) governs the switching between SLDS modes such that each SLDS mode has a corresponding  HMM state.   
 A nonparametric Bayesian approach utilizes a hierarchical Dirichlet process (HDP) such that the number of HMM states can be inferred from the data. The model is called sticky as a bias is introduced towards the self-transition probability of each state increasing state persistence. 
-For a proper explanation, see 
+For a proper explanation, see [1]
 
 The VAR equation is given by:  
 ![VAR_equation](images/var_equation.png?raw=true "Equation")  
