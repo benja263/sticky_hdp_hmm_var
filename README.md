@@ -1,4 +1,4 @@
-##sticky-HDP-HMM-Vector Autoregression
+## sticky-HDP-HMM-Vector Autoregression
 A python implementation of the sticky-HDP-HMM-VAR model[1].  
 For a fast implementation of stable HMM algorithms[2], some functions were implemented in C++.
 
