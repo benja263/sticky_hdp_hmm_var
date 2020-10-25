@@ -14,14 +14,12 @@ def generate_data_structure(Y, order):
     :param int order: VAR order 'r'
     :return:
     """
-    X, valid = make_design_matrix(Y, order)
-    data = {'Y': Y[:, valid], 'X': X[:, valid]}
-    data['block_size'] = np.ones(data['Y'].shape[1], dtype=int)
-    data['block_end'] = np.cumsum(data['block_size'])
+    X = create_X_matrix(Y, order)
+    data = {'Y': Y[:, order:], 'X': X}
     return data
 
 
-def make_design_matrix(Y, order):
+def create_X_matrix(Y, order):
     """
     Generate matrix X such that X[t] = Y[t-1:t-order]
     Every column in X corresponds to the previous r observations (r = order) and Y equals the current observation
@@ -32,12 +30,9 @@ def make_design_matrix(Y, order):
     D, T = np.shape(Y)
     X = np.zeros((D*order, T))
     for lag in range(1, order+1):
-        ii = D*(lag-1)
-        ind = np.arange(ii, ii+D)
-        X[ind] = np.concatenate((np.zeros((D, np.min([lag, T]))), Y[:, np.arange(T - np.min([lag, T]))]), axis=1)
-    valid_indices = np.ones(T, dtype=bool)
-    valid_indices[:order] = 0
-    return X, valid_indices
+        row_indices = np.arange(D * (lag - 1), D * (lag - 1) + D)
+        X[row_indices] = np.concatenate((np.zeros((D, min([lag, T]))), Y[:, np.arange(T - min([lag, T]))]), axis=1)
+    return X[:, order:]
 
 
 
